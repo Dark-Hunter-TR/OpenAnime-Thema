@@ -19,7 +19,6 @@
 		Button,
 		ComboBox,
 		Expander,
-		InfoBar,
 		SegmentedControlButton,
 		TextBlock,
 		ToggleSwitch,
@@ -27,6 +26,7 @@
 	} from "fluent-svelte-extra";
 
 	import Icon from "$lib/Icon.svelte";
+	import StatusBar from "$lib/StatusBar.svelte";
 	import SegmentedControl from "$lib/Segmented.svelte";
 	import { ROUTES, VIEWPORTS } from "$lib/routes";
 	import type { AppSettings } from "$lib/settings";
@@ -52,7 +52,9 @@
 <div class="page">
 	<header class="head">
 		<TextBlock variant="title">Ayarlar</TextBlock>
-		<TextBlock variant="body">Uygulamanın kendi tercihleri. Düzenlediğiniz temayı etkilemez.</TextBlock>
+		<TextBlock variant="body" class="text-secondary">
+			Uygulamanın kendi tercihleri. Düzenlediğiniz temayı etkilemez.
+		</TextBlock>
 	</header>
 
 	<div class="sections">
@@ -88,25 +90,6 @@
 								Koyu
 							</SegmentedControlButton>
 						</SegmentedControl>
-					</span>
-				</div>
-			</Expander>
-
-			<Expander expandable={false}>
-				<Icon slot="icon" name="typography" size={20} />
-				<div class="item">
-					<span class="item-header">
-						<TextBlock variant="body">Dil</TextBlock>
-						<TextBlock variant="caption">
-							Uygulama şu an yalnızca Türkçe. Başka bir dil seçeneği eklenmediği için bu
-							kontrol devre dışı — çalışmayan bir seçenek sunmak yerine olduğu gibi
-							gösteriyoruz.
-						</TextBlock>
-					</span>
-					<span class="item-action">
-						<Tooltip text="Şimdilik tek dil mevcut">
-							<ComboBox items={[{ name: "Türkçe", value: "tr" }]} value="tr" disabled />
-						</Tooltip>
 					</span>
 				</div>
 			</Expander>
@@ -201,9 +184,6 @@
 								? "Önizlemede oturum açık. Giriş gerektiren sayfalar önizlenebilir."
 								: "Önizlemede oturum açık değil."}
 						</TextBlock>
-						<TextBlock variant="caption">
-							Uygulama sizden OpenAnime parolası istemez ve hesabınıza erişmez.
-						</TextBlock>
 					</span>
 					<span class="item-action">
 						{#if loggedIn}
@@ -211,28 +191,13 @@
 								<Icon name="person" size={16} /><span class="gap">Hesabı önizlemede aç</span>
 							</Button>
 						{:else}
-							<Button on:click={onPreviewLogin}>
+							<Button variant="accent" on:click={onPreviewLogin}>
 								<Icon name="person" size={16} /><span class="gap">Önizlemede giriş yap</span>
 							</Button>
 						{/if}
 					</span>
 				</div>
 			</Expander>
-
-			<!--
-				Bu kutu bir özür değil, bir kayıt: özelliğin neden yapılmadığını
-				kullanıcıya açıkça söylüyoruz ki "eksik kalmış" sanılmasın.
-			-->
-			<InfoBar severity="information" title="Neden uygulama içi giriş yok?" closable={false}>
-				<TextBlock variant="caption">
-					openani.me üçüncü taraf uygulamalar için herkese açık bir giriş (OAuth) mekanizması
-					sunmuyor: sitenin giriş uç noktası e-posta ve parolayı doğrudan istiyor, uygulama
-					kaydı ya da yetkilendirme ekranı yok. Bu yüzden buraya parola alan bir form
-					koymuyoruz. Bunun yerine önizleme penceresi kendi oturumunu tutuyor ve siteye
-					tarayıcıdaki gibi giriş yapabiliyorsunuz — kimlik bilgileriniz uygulamaya hiç
-					uğramıyor. Tema düzenleme ve önizleme zaten girişten bağımsız çalışır.
-				</TextBlock>
-			</InfoBar>
 		</section>
 
 		<!-- --- Depolama ----------------------------------------------------- -->
@@ -256,40 +221,6 @@
 						<Button on:click={onOpenProjectsFolder} disabled={!projectsPath}>Klasörü aç</Button>
 					</span>
 				</div>
-			</Expander>
-		</section>
-
-		<!-- --- Hakkında ----------------------------------------------------- -->
-		<section class="expand-section">
-			<TextBlock variant="bodyStrong">Hakkında</TextBlock>
-
-			<Expander>
-				<Icon slot="icon" name="navAbout" size={20} />
-				<div class="item">
-					<span class="item-header">
-						<TextBlock variant="body">OpenAnime Tema Editörü{appVersion ? ` ${appVersion}` : ""}</TextBlock>
-						<TextBlock variant="caption">Temaların siteye nasıl uygulandığı hakkında.</TextBlock>
-					</span>
-				</div>
-
-				<svelte:fragment slot="content">
-					<div class="about">
-						<TextBlock variant="caption">
-							Editör, sitenin kendi resmî tema giriş noktasını kullanır: openani.me açılışta
-							<code>localStorage.theme_content</code> içindeki CSS'i okuyup sayfaya
-							<code>&lt;style themeStyle&gt;</code> olarak ekler. Ürettiğimiz dosya tam olarak
-							budur — yani önizlemede gördüğünüz ile dışa aktardığınız aynı metindir.
-						</TextBlock>
-						<TextBlock variant="caption">
-							Hazır temanızı sitede kullanmak için: openani.me → Ayarlar → Görünüm → Özel Tema →
-							Yükle ile dışa aktardığınız <code>.css</code> dosyasını seçin.
-						</TextBlock>
-						<TextBlock variant="caption">
-							Renkler <code>--fds-*</code> token'ları üzerinden değiştirilir; bunlar sitenin
-							kendi tasarım sistemidir, dolayısıyla tema site güncellendikçe birlikte evrilir.
-						</TextBlock>
-					</div>
-				</svelte:fragment>
 			</Expander>
 		</section>
 	</div>
@@ -347,6 +278,14 @@
 		min-width: 0;
 	}
 
+	/* Her satırda üstte `type-body` başlık, altında `type-caption` açıklama var.
+	   Açıklama ikincil renkte olmalı (rapordaki hiyerarşi: "açıklama metinleri
+	   → --fds-text-secondary"). Tek tek sınıf yazmak yerine kural burada:
+	   desen her satırda tekrar ediyor ve bir satır eklendiğinde unutulmasın. */
+	.item-header :global(.text-block.type-caption) {
+		color: var(--fds-text-secondary);
+	}
+
 	.item-action {
 		flex: 0 0 auto;
 		display: flex;
@@ -354,6 +293,8 @@
 		gap: 8px;
 	}
 
+	/* "Hakkında" bölümünün gövdesi baştan sona açıklama metni; `.item-header`
+	   ile aynı gerekçeyle ikincil renkte. */
 	.about {
 		display: flex;
 		flex-direction: column;
@@ -361,7 +302,23 @@
 		padding: 12px;
 	}
 
+	.about :global(.text-block) {
+		color: var(--fds-text-secondary);
+	}
+
 	.gap {
 		margin-left: 6px;
+	}
+
+	:global(.combo-box-dropdown) {
+		scrollbar-width: none !important;
+		-ms-overflow-style: none !important;
+	}
+
+	:global(.combo-box-dropdown::-webkit-scrollbar) {
+		display: none !important;
+		width: 0 !important;
+		height: 0 !important;
+		background: transparent !important;
 	}
 </style>

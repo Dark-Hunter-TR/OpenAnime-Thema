@@ -12,7 +12,6 @@
 		ComboBox,
 		ContentDialog,
 		IconButton,
-		InfoBar,
 		MenuFlyout,
 		MenuFlyoutDivider,
 		MenuFlyoutItem,
@@ -23,6 +22,7 @@
 	} from "fluent-svelte-extra";
 
 	import Icon from "$lib/Icon.svelte";
+	import StatusBar from "$lib/StatusBar.svelte";
 	import { isEnter, type ForwardedKeyEvent } from "$lib/events";
 	import {
 		ImportError,
@@ -171,8 +171,8 @@
 
 <div class="page">
 	<header class="head">
-		<TextBlock variant="title">Temalarım</TextBlock>
-		<TextBlock variant="body">
+		<TextBlock variant="title">Ana Sayfa</TextBlock>
+		<TextBlock variant="body" class="text-secondary">
 			Kayıtlı bir temayı açın, sıfırdan yeni bir tane oluşturun ya da GitHub'dan içe aktarın.
 		</TextBlock>
 	</header>
@@ -200,11 +200,16 @@
 		</div>
 
 		{#if projects.length === 0}
-			<!-- Boş durum: kullanıcıyı suçlamayan, tek bir sonraki adım öneren metin. -->
+			<!--
+				Boş durum: kullanıcıyı suçlamayan, tek bir sonraki adım öneren metin.
+				Yapı sitenin boş durum bileşenlerinin aynısı (`.notification-empty-wrap`):
+				dikey flex, ortalanmış, `gap: .5rem`, 48px'lik üçüncül renkte ikon,
+				`type-body-strong` başlık ve `type-caption` + ikincil renkte açıklama.
+			-->
 			<div class="empty">
-				<Icon name="navLibrary" size={32} />
+				<span class="empty-icon"><Icon name="emptyThemes" size={48} /></span>
 				<TextBlock variant="bodyStrong">Henüz kayıtlı tema yok</TextBlock>
-				<TextBlock variant="caption">
+				<TextBlock variant="caption" class="text-secondary">
 					Bir tema oluşturup editörde "Projeyi kaydet" dediğinizde burada listelenir.
 				</TextBlock>
 			</div>
@@ -227,12 +232,16 @@
 								<span class="preview-dot" style="background: {accentCss(project.accent)}"></span>
 							</span>
 							<span class="card-text">
+								<!-- Tarih/kaynak bilgisi üçüncül renkte: sitede de mod ve
+								     süre bilgisi `.text-tertiary` taşıyor. -->
 								<TextBlock variant="bodyStrong">{project.name}</TextBlock>
-								<TextBlock variant="caption">
+								<TextBlock variant="caption" class="text-tertiary">
 									{MODE_LABEL[project.mode] ?? project.mode} · {formatUpdated(project.updatedAt)}
 								</TextBlock>
 								{#if project.source}
-									<TextBlock variant="caption">GitHub'dan içe aktarıldı</TextBlock>
+									<TextBlock variant="caption" class="text-tertiary">
+										GitHub'dan içe aktarıldı
+									</TextBlock>
 								{/if}
 							</span>
 						</button>
@@ -257,57 +266,6 @@
 					</div>
 				{/each}
 			</div>
-		{/if}
-	</section>
-
-	<section class="section">
-		<TextBlock variant="bodyStrong">OpenAnime hesabı</TextBlock>
-		<!--
-			Neden "OpenAnime ile Giriş Yap" düğmesi YOK: openani.me üçüncü taraf
-			uygulamalara açık, resmî bir giriş (OAuth) mekanizması sunmuyor.
-			Bu yüzden hesabı uygulamanın içinde sormak yerine, kullanıcıyı
-			önizlemedeki GERÇEK siteye yönlendiriyoruz — kimlik bilgileri
-			uygulamaya hiç uğramıyor.
-		-->
-		{#if loggedIn}
-			<!--
-				Kullanıcı adı / avatar GÖSTERMİYORUZ. Bunun için token'la
-				`api.openani.me/user`'a istek atmak gerekirdi; o da uygulamayı
-				kullanıcı adına davranan yetkisiz bir API istemcisine çevirirdi —
-				bu projede baştan beri kaçınılan şey tam olarak bu. Oturumun açık
-				olduğunu, token'ın DEĞERİNE hiç dokunmadan, yalnızca çerezin
-				varlığından biliyoruz.
-			-->
-			<InfoBar severity="success" title="Önizlemede oturum açık" closable={false}>
-				<TextBlock variant="caption">
-					Giriş gerektiren sayfalar (Kütüphane, Öneriler, Aktivite, Kişisel liste) artık
-					önizlenebilir. Oturum önizleme penceresine ait; uygulama hesabınıza erişmiyor,
-					kimlik bilgilerinizi görmüyor ve saklamıyor.
-				</TextBlock>
-				<svelte:fragment slot="action">
-					<Button on:click={onOpenAccount}>
-						<Icon name="person" size={16} /><span class="gap">Hesabı önizlemede aç</span>
-					</Button>
-				</svelte:fragment>
-			</InfoBar>
-		{:else}
-			<InfoBar
-				severity="information"
-				title="Giriş, önizlemenin içinde yapılır"
-				closable={false}
-			>
-				<TextBlock variant="caption">
-					OpenAnime'nin üçüncü taraf uygulamalar için herkese açık bir giriş API'si yok. Bu
-					yüzden uygulama sizden parola istemiyor. Önizleme penceresi kendi oturumunu tuttuğu
-					için siteye tarayıcıdaki gibi doğrudan giriş yapabilirsiniz; giriş gerektiren
-					sayfalar (Kütüphane, Öneriler, Aktivite) böylece önizlenebilir hale gelir.
-				</TextBlock>
-				<svelte:fragment slot="action">
-					<Button on:click={onPreviewLogin}>
-						<Icon name="person" size={16} /><span class="gap">Önizlemede giriş yap</span>
-					</Button>
-				</svelte:fragment>
-			</InfoBar>
 		{/if}
 	</section>
 </div>
@@ -362,7 +320,7 @@
 		{/if}
 
 		{#if importError}
-			<InfoBar severity="critical" title="İçe aktarılamadı" message={importError} closable={false} />
+			<StatusBar severity="critical" title="İçe aktarılamadı" message={importError} closable={false} />
 		{/if}
 
 		{#if importBusy}
@@ -374,12 +332,12 @@
 			</div>
 		{/if}
 
-		<InfoBar severity="information" title="" closable={false}>
+		<StatusBar severity="information" title="" closable={false}>
 			<TextBlock variant="caption">
 				Çekilen CSS'teki renk, köşe yarıçapı ve yazı tipi değerleri kontrollere otomatik
 				eşlenir. Eşlenemeyen kurallar kaybolmaz — "Ham CSS" bölümünde olduğu gibi korunur.
 			</TextBlock>
-		</InfoBar>
+		</StatusBar>
 	</div>
 
 	<svelte:fragment slot="footer">
@@ -479,6 +437,12 @@
 		gap: 12px;
 	}
 
+	/* Sitenin `.card-wrapper` kartı: `overlay-corner-radius`, hover'da
+	   `translateY(-2px)` + `--fds-flyout-shadow`. Süre kart hover'ı için
+	   250ms (`--fds-control-normal-duration`), easing `cubic-bezier(0,0,0,1)`.
+	   Sitenin kendi kuralı `transition: transform .2s` diyor; aradaki 50ms'yi
+	   şartnamedeki ölçeğe yuvarlıyoruz ki uygulamada tek bir süre tablosu
+	   olsun. */
 	.card {
 		position: relative;
 		border-radius: var(--fds-overlay-corner-radius);
@@ -486,6 +450,14 @@
 		border: 1px solid var(--fds-card-stroke-default);
 		box-shadow: var(--fds-card-shadow);
 		overflow: hidden;
+		transition: transform var(--fds-control-normal-duration)
+				var(--fds-control-fast-out-slow-in-easing),
+			box-shadow var(--fds-control-normal-duration) var(--fds-control-fast-out-slow-in-easing);
+	}
+
+	.card:hover {
+		transform: translateY(-2px);
+		box-shadow: var(--fds-flyout-shadow);
 	}
 
 	/* Kartın tıklanabilir gövdesi. Zemini şeffaf: kartın kendi yüzeyi görünsün. */
@@ -560,16 +532,24 @@
 		right: 6px;
 	}
 
+	/* Sitenin `.notification-empty-wrap` / `.mobile-notification-empty`
+	   kuralları: dikey flex, ortalanmış, `gap: .5rem`, üstte `2rem` boşluk.
+	   Çerçeve YOK — sitenin boş durumları çizgisiz. */
 	.empty {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 6px;
-		padding: 2.5rem 1rem;
-		border-radius: var(--fds-overlay-corner-radius);
-		border: 1px dashed var(--fds-card-stroke-default);
-		color: var(--fds-text-secondary);
+		justify-content: center;
+		gap: 0.5rem;
+		margin-top: 2rem;
 		text-align: center;
+	}
+
+	/* Boş durum ikonu üçüncül renkte; metin renginden bağımsız olması şart,
+	   yoksa başlıkla aynı beyazlıkta olup dikkati ondan çalıyor. */
+	.empty-icon {
+		display: inline-flex;
+		color: var(--fds-text-tertiary);
 	}
 
 	.dialog {

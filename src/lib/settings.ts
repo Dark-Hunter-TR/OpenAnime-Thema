@@ -105,8 +105,15 @@ export function applyAppTheme(mode: ThemeMode): void {
 	root.classList.add(SWITCHING_CLASS);
 
 	root.classList.remove("fds-theme-light", "fds-theme-dark");
-	if (mode === "light") root.classList.add("fds-theme-light");
-	else if (mode === "dark") root.classList.add("fds-theme-dark");
+	if (mode === "light") {
+		root.classList.add("fds-theme-light");
+		root.style.colorScheme = "light";
+	} else if (mode === "dark") {
+		root.classList.add("fds-theme-dark");
+		root.style.colorScheme = "dark";
+	} else {
+		root.style.colorScheme = "light dark";
+	}
 
 	// Yeni değerleri bu karede hesaplat; aksi hâlde tarayıcı sınıf ekleme ile
 	// kaldırmayı tek bir düzene toplayıp geçişleri yine çalıştırabiliyor.

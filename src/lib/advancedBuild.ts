@@ -190,6 +190,12 @@ const RAMP_DARK_1 = 4;
  * varsayılan rampası varsayılır.
  */
 export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
+	const effectiveMode =
+		mode === "system"
+			? typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: light)").matches
+				? "light"
+				: "dark"
+			: mode;
 	return {
 		text: { on: false, colors: seedColors(TEXT_TOKENS, mode, ramp) },
 		cards: {
@@ -233,7 +239,7 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			indicatorHeight: SITE_DEFAULTS.sidebarIndicatorHeight,
 			indicatorRadius: SITE_DEFAULTS.sidebarIndicatorRadius,
 			// background-color: var(--fds-accent-default)
-			indicatorColor: rampHex(ramp, mode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4")
+			indicatorColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4")
 		},
 		surface: { on: false, colors: seedColors(SURFACE_TOKENS, mode, ramp) },
 		links: { on: false, colors: seedColors(LINK_TOKENS, mode, ramp) },
@@ -252,7 +258,7 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			on: false,
 			// #badge: linear-gradient(135deg, hsl(var(--fds-accent-light-1)), var(--fds-accent-default))
 			badgeFrom: rampHex(ramp, RAMP_LIGHT_1, "#00a2ff"),
-			badgeTo: rampHex(ramp, mode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			badgeTo: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
 			// .released-badge: linear-gradient(to right, #6371da, var(--fds-accent-tertiary))
 			releasedFrom: SITE_DEFAULTS.releasedBadgeFrom,
 			releasedTo: rampHex(ramp, RAMP_BASE, "#0078d4"),
@@ -265,7 +271,7 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 		banner: {
 			on: false,
 			// .slider-card.selected { outline-color: var(--fds-accent-default) }
-			outlineColor: rampHex(ramp, mode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			outlineColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
 			// #progress { height: .3rem; background: #fff; border-radius: 50px }
 			progressHeight: SITE_DEFAULTS.bannerProgressHeight,
 			progressColor: SITE_DEFAULTS.bannerProgressColor,
@@ -277,7 +283,7 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			// Sitede yorumun kendi arkaplanı yok; kart yüzeyini temel alıyoruz.
 			bg: seedColor("--fds-card-background-secondary", mode, ramp, 3),
 			radius: SITE_DEFAULTS.overlayRadius,
-			focusColor: rampHex(ramp, mode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4")
+			focusColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4")
 		},
 		player: {
 			on: false,
@@ -287,11 +293,11 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			// .slider-rail { block-size: 4px }
 			progressHeight: SITE_DEFAULTS.playerRailHeight,
 			railColor: seedColor("--fds-control-strong-fill-default", mode, ramp, 54),
-			trackColor: rampHex(ramp, mode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
-			thumbColor: rampHex(ramp, mode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			trackColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			thumbColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
 			glow: false,
 			episodeBg: seedColor("--fds-card-background-default", mode, ramp, 5),
-			currentColor: rampHex(ramp, mode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			currentColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
 			cueOn: false,
 			cueSize: 20,
 			cueColor: "#ffffff",

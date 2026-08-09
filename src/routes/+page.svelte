@@ -5,7 +5,6 @@
 		ComboBox,
 		ContentDialog,
 		IconButton,
-		InfoBar,
 		SegmentedControlButton,
 		Slider,
 		TextArea,
@@ -20,11 +19,13 @@
 	import { openPath } from "@tauri-apps/plugin-opener";
 
 	import AdvancedSections from "$lib/AdvancedSections.svelte";
+	import AboutDialog from "$lib/AboutDialog.svelte";
 	import AppSettings from "$lib/AppSettings.svelte";
 	import ColorField from "$lib/ColorField.svelte";
 	import ColorPicker from "$lib/ColorPicker.svelte";
 	import CssEditor from "$lib/CssEditor.svelte";
 	import Icon from "$lib/Icon.svelte";
+	import StatusBar from "$lib/StatusBar.svelte";
 	import { isEnter } from "$lib/events";
 	import Launcher from "$lib/Launcher.svelte";
 	import NavRail from "$lib/NavRail.svelte";
@@ -695,6 +696,7 @@
 
 	/** "Tümünü sıfırla" onay diyaloğu. */
 	let confirmResetAll = false;
+	let aboutDialogOpen = false;
 
 	/**
 	 * Her şeyi varsayılana döndürür — ama CSS'i YENİDEN ÜRETMEZ.
@@ -786,7 +788,7 @@
 			? `${projectName}${dirty ? " •" : ""}`
 			: view === "settings"
 				? "Ayarlar"
-				: "Temalarım";
+				: "Ana Sayfa";
 
 	function restoreUi(ui: EditorUiState) {
 		editMode = ui.editMode ?? "visual";
@@ -1172,7 +1174,7 @@
 	//
 	// Çözüm, diyalog açıkken önizlemeyi geçici olarak gizlemek. Zaten var olan
 	// görünürlük yolunu kullanıyoruz; yeni bir mekanizma eklenmiyor.
-	$: modalOpen = confirmLeave || namingOpen || confirmResetAll;
+	$: modalOpen = confirmLeave || namingOpen || confirmResetAll || aboutDialogOpen;
 	$: syncPreviewVisibility(view, modalOpen);
 
 	async function syncPreviewVisibility(current: NavId, blocked: boolean) {
@@ -1204,7 +1206,10 @@
 
 	// Ayarlar her değiştiğinde diske yaz ve arayüz temasını uygula.
 	$: if (settings) {
+		JSON.stringify(settings);
 		saveSettings(settings);
+	}
+	$: if (settings?.appTheme) {
 		applyAppTheme(settings.appTheme);
 	}
 
@@ -1237,7 +1242,13 @@
 	<TitleBar title={titleContext} />
 
 	<div class="body">
-		<NavRail current={view} editorEnabled={hasOpenProject} onNavigate={navigate} />
+		<NavRail
+			current={view}
+			editorEnabled={hasOpenProject}
+			aboutOpen={aboutDialogOpen}
+			onNavigate={navigate}
+			onOpenAbout={() => (aboutDialogOpen = true)}
+		/>
 
 		<div class="view">
 		{#if view === "home"}
@@ -1277,7 +1288,9 @@
 					</Button>
 				</Tooltip>
 			</div>
-			<TextBlock variant="caption">Değişiklikler sağdaki siteye anında yansır.</TextBlock>
+			<TextBlock variant="caption" class="text-secondary">
+				Değişiklikler sağdaki siteye anında yansır.
+			</TextBlock>
 
 			<div class="chips">
 				<Button variant={dirty ? "accent" : "standard"} on:click={saveCurrentProject}>
@@ -1299,11 +1312,11 @@
 		</header>
 
 		{#if error}
-			<InfoBar severity="critical" title="Hata" message={error} closable={false} />
+			<StatusBar severity="critical" title="Hata" message={error} closable={false} />
 		{/if}
 
 		{#if projectStatus}
-			<InfoBar severity="success" title="" message={projectStatus} closable={true} />
+			<StatusBar severity="success" title="" message={projectStatus} closable={true} />
 		{/if}
 
 		<!--
@@ -1496,7 +1509,7 @@
 				<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} />
 
 				<Section icon="code" title="Ham CSS" onReset={() => resetSection("raw")}>
-					<InfoBar
+					<StatusBar
 						severity="caution"
 						title="Dikkat"
 						message="Buraya yazdığınız CSS resmi tema token'ları dışına çıkar; site güncellemelerinde bozulabilir."
@@ -1546,7 +1559,7 @@
 				</div>
 
 				{#if fileStatus}
-					<InfoBar severity="success" title="" message={fileStatus} closable={false} />
+					<StatusBar severity="success" title="" message={fileStatus} closable={false} />
 				{/if}
 
 				<TextBlock variant="caption">
@@ -1554,7 +1567,7 @@
 					sitenin gerçek class/id'leri listelenir.
 				</TextBlock>
 				<CssEditor value={cssText} on:change={onCodeChange} />
-				<InfoBar
+				<StatusBar
 					severity="information"
 					title="İki yönlü senkron"
 					message="İşaretli blok içindeki değerleri elle değiştirirseniz soldaki kontroller de güncellenir. Altı accent basamağı --fds-accent-base'ten türetildiği için elle düzenlenirse yeniden üretilir. Harici dosya modunda da aynı senkron çalışır."
@@ -1663,7 +1676,7 @@
 		varsayılanlarına döner. Bu işlem geri alınamaz.
 	</TextBlock>
 	{#if externalPath}
-		<InfoBar
+		<StatusBar
 			severity="caution"
 			title="Harici dosya açık"
 			message="Dosya diskte değişmez; sıfırlanmış tema ancak Kaydet'e bastığınızda yazılır."
@@ -1678,6 +1691,8 @@
 		<Button on:click={() => (confirmResetAll = false)}>Vazgeç</Button>
 	</svelte:fragment>
 </ContentDialog>
+
+<AboutDialog open={aboutDialogOpen} {appVersion} onClose={() => (aboutDialogOpen = false)} />
 
 <style>
 	/* Kısıt gereği burada GÖRSEL karar yok — yalnızca yerleşim iskeleti ve
@@ -1867,5 +1882,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
+	}
+
+	:global(.combo-box-dropdown) {
+		scrollbar-width: none !important;
+		-ms-overflow-style: none !important;
+	}
+
+	:global(.combo-box-dropdown::-webkit-scrollbar) {
+		display: none !important;
+		width: 0 !important;
+		height: 0 !important;
+		background: transparent !important;
 	}
 </style>

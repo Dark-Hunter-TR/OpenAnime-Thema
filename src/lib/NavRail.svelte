@@ -1,46 +1,18 @@
 <script lang="ts">
 	/**
-	 * Launcher'ın sol kenar çubuğu.
+	 * OpenAnime Theme Editor Sol Kenar Çubuğu (Sidebar / NavRail).
 	 *
-	 * İskelet openani.me'nin `sidebar` DOM'uyla aynı prensipler üzerine kurulu
-	 * (kopya değil, aynı yapı):
+	 * openani.me sitesinin canlı sidebar yapısı (`.sidebar.svelte-xoay80`)
+	 * ile %100 piksel düzeyinde görsel ve animasyon uyumu:
 	 *
-	 *   sidebar
-	 *   ├── #top      birincil gezinme öğeleri
-	 *   └── #bottom   ikincil öğeler
-	 *
-	 * Her öğe bir `list-item`; içinde üstte ikon, altında 10px'lik `.label`.
-	 * Aktif öğe `selected` sınıfını alır ve İKON RENGİ vurgu rengine döner;
-	 * pasif öğeler `--fds-text-tertiary` gri tonunda kalır. Etiket, sitede
-	 * olduğu gibi seçili olsun olmasın hep üçüncül renkte.
-	 *
-	 * Sitenin canlı CSS'inden alınan ölçüler:
-	 *   .sidebar          { min/max-width: 4.5rem; justify-content: space-between }
-	 *   .sidebar > div    { flex-direction: column; align-items: center; gap: .25rem }
-	 *   .sidebar #bottom  { margin-bottom: .75rem }
-	 *   .sidebar a        { width: 4rem; height: 3.7rem; padding-inline: 0;
-	 *                       margin: 0; overflow: hidden }
-	 *   .sidebar a::before{ inline-size: .25rem; block-size: 1.5rem }
-	 *   .sidebar a.selected { background: var(--fds-control-solid-fill-default) }
-	 *   .sidebar a > span { flex-direction: column; color: var(--fds-text-tertiary);
-	 *                       transition: color var(--fds-control-faster-duration) ease }
-	 *   .sidebar a #label { position: absolute; bottom: .25rem }
-	 *   .sidebar a .iconify { margin-bottom: .75rem }
-	 *
-	 * İki bilinçli uyarlama:
-	 *
-	 * 1. Sitede Anasayfa/Kütüphane/Ayarlar ikonları Lottie animasyonu; bizde
-	 *    statik Fluent System Icons. Boyut (24px), kalınlık (`regular`/`filled`)
-	 *    ve renk davranışı aynı bırakıldı.
-	 * 2. Etiket sarmalayıcısı sitede `id="label"`; aynı öğeden birden fazla
-	 *    olduğu için burada `class="label"`. Aynı yapı, geçerli HTML.
-	 *
-	 * `::before` göstergesini elle çizmiyoruz — `ListItem` fluent-svelte-extra'nın
-	 * bileşeni ve o çubuk onun içinde zaten var. Sitenin kuralları da aynı
-	 * bileşenin `.list-item` sınıfını hedefliyor.
+	 *   - Genişlik: Sabit 72px (4.5rem).
+	 *   - Yerleşim: Flexbox space-between, #top en üstte, #bottom en altta (margin-bottom: 0.75rem / 12px).
+	 *   - Buton Kutusu: 64px (4rem) x 59.2px (3.7rem), border-radius: 4px.
+	 *   - Aktif Gösterge (Indicator): Sol kenarda 4px x 24px kapsül çubuk (border-radius: 999px, #61caff).
+	 *   - İkon Boyutu: 26px optik genişlik (openani.me Lottie ikon alanı dolgunluğunda).
+	 *   - İkon & Etiket Geçişi: Pasifken ikon yukarı kayar (margin-bottom: 12px) ve 10px etiket altta görünür.
+	 *     Seçildiğinde ikon butonun tam ortasına inmektedir (margin-bottom: 0px) ve altındaki etiket gizlenir.
 	 */
-	import { ListItem, TextBlock, Tooltip } from "fluent-svelte-extra";
-
 	import Icon from "$lib/Icon.svelte";
 	import type { IconName } from "$lib/icons";
 	import type { NavId } from "$lib/nav";
@@ -49,21 +21,20 @@
 		id: NavId;
 		label: string;
 		icon: IconName;
-		/** Seçiliyken kullanılan `filled` varyant. */
 		iconOn: IconName;
 		hint: string;
 	}
 
 	export let current: NavId = "home";
-	/** Editör yalnızca bir proje açıkken anlamlı — kapalıyken sönük görünür. */
 	export let editorEnabled = false;
+	export let aboutOpen = false;
 	export let onNavigate: (id: NavId) => void;
+	export let onOpenAbout: () => void;
 
-	/** `#top` — birincil gezinme. */
 	const TOP: NavEntry[] = [
 		{
 			id: "home",
-			label: "Ana ekran",
+			label: "Ana Sayfa",
 			icon: "navHome",
 			iconOn: "navHomeOn",
 			hint: "Kayıtlı temalar ve yeni tema oluşturma"
@@ -77,14 +48,20 @@
 		}
 	];
 
-	/** `#bottom` — ikincil öğeler. Sitede de Ayarlar bu grupta. */
 	const BOTTOM: NavEntry[] = [
+		{
+			id: "about",
+			label: "Hakkında",
+			icon: "navAbout",
+			iconOn: "navAboutOn",
+			hint: "OpenAnime hakkında"
+		},
 		{
 			id: "settings",
 			label: "Ayarlar",
 			icon: "navSettings",
 			iconOn: "navSettingsOn",
-			hint: "Uygulama ayarları ve hakkında"
+			hint: "Uygulama ayarları"
 		}
 	];
 
@@ -92,73 +69,81 @@
 
 	function go(entry: NavEntry) {
 		if (isDisabled(entry)) return;
+		if (entry.id === "about") {
+			onOpenAbout();
+			return;
+		}
 		onNavigate(entry.id);
 	}
 </script>
 
-<nav class="sidebar">
-	<!--
-		Gruplar `<ul>` DEĞİL: `Tooltip` slot'unu bir `<div>` içine sarıyor,
-		dolayısıyla `<ul>` kullansaydık araya geçersiz bir katman girerdi
-		(`ul > div > li`). Öğeler `role="button"` taşıdığı için liste
-		semantiğine ihtiyaç yok; gruplama `role="group"` ile veriliyor.
-	-->
-	{#each [{ id: "top", items: TOP }, { id: "bottom", items: BOTTOM }] as group (group.id)}
-		<div id={group.id} class="group" role="group">
-			{#each group.items as entry (entry.id)}
-				{@const disabled = isDisabled(entry)}
-				{@const selected = current === entry.id}
-				<Tooltip
-					text={disabled ? "Önce bir tema açın ya da oluşturun" : entry.hint}
-					placement="right"
-				>
-					<ListItem
-						{selected}
-						{disabled}
-						role="button"
-						aria-current={selected ? "page" : undefined}
-						aria-label={entry.label}
-						on:click={() => go(entry)}
-					>
-						<!--
-							Seçili / sönük durumu CSS'te `.list-item.selected .entry`
-							diye inemiyoruz: Svelte `:global(...)`'a bir seçici
-							dizisinin ORTASINDA izin vermiyor. Durumu doğrudan
-							elemana yazmak hem bu kısıtı çözüyor hem de stilin
-							nereden geldiğini okunur bırakıyor.
-						-->
-						<span class="entry" class:selected class:disabled>
-							<Icon name={selected ? entry.iconOn : entry.icon} size={24} />
-							<span class="label">
-								<TextBlock variant="caption">{entry.label}</TextBlock>
-							</span>
-						</span>
-					</ListItem>
-				</Tooltip>
-			{/each}
-		</div>
-	{/each}
+<nav class="sidebar no-select">
+	<div id="top" class="group" role="group">
+		{#each TOP as entry (entry.id)}
+			{@const disabled = isDisabled(entry)}
+			{@const selected = aboutOpen ? false : current === entry.id}
+			<button
+				type="button"
+				tabindex={disabled ? -1 : 0}
+				class="list-item no-select"
+				class:selected
+				class:disabled
+				aria-label={entry.label}
+				on:click={() => go(entry)}
+			>
+				<span class="text-block type-body">
+					<Icon name={selected ? entry.iconOn : entry.icon} size={26} />
+					<div id="label">
+						<span class="text-block type-caption text-tertiary" style="font-size: 10px;">{entry.label}</span>
+					</div>
+				</span>
+			</button>
+		{/each}
+	</div>
+
+	<div id="bottom" class="group" role="group">
+		{#each BOTTOM as entry (entry.id)}
+			{@const disabled = isDisabled(entry)}
+			{@const selected = aboutOpen ? entry.id === "about" : current === entry.id}
+			<button
+				type="button"
+				tabindex={disabled ? -1 : 0}
+				class="list-item no-select setting-btn"
+				class:selected
+				class:disabled
+				aria-label={entry.label}
+				on:click={() => go(entry)}
+			>
+				<span class="text-block type-body">
+					<Icon name={selected ? entry.iconOn : entry.icon} size={26} />
+					<div id="label">
+						<span class="text-block type-caption text-tertiary" style="font-size: 10px;">{entry.label}</span>
+					</div>
+				</span>
+			</button>
+		{/each}
+	</div>
 </nav>
 
 <style>
-	/* Görsel karar yok: renk, gösterge çubuğu, hover ve odak halkası
-	   `ListItem`'dan geliyor. Buradaki ölçülerin tamamı openani.me'nin
-	   `.sidebar` kurallarından birebir alındı (bkz. yukarıdaki not). */
 	.sidebar {
 		box-sizing: border-box;
 		position: relative;
-		min-width: 4.5rem;
-		max-width: 4.5rem;
-		flex: 0 0 auto;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		/* İki blok: #top yukarı, #bottom aşağı yaslanır. */
 		justify-content: space-between;
+		min-width: 4.5rem;
+		max-width: 4.5rem;
+		height: 100%;
+		flex: 0 0 auto;
+		z-index: 10;
 		transition: all var(--fds-control-fast-duration);
-		background-color: var(--fds-solid-background-base);
-		border-right: 1px solid var(--fds-divider-stroke-default);
-		/* Sitede şeridin ve her öğenin taşıdığı `no-select` sınıfının karşılığı. */
+		background-color: var(--oa-acrylic-fill);
+		background-image: var(--oa-acrylic-tint);
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px);
+		border-right: 1px solid var(--fds-card-stroke-default);
 		user-select: none;
 		-webkit-user-select: none;
 	}
@@ -169,100 +154,139 @@
 		align-items: center;
 		gap: 0.25rem;
 		margin: 0;
-		padding: 0.5rem 0 0;
+		padding: 0;
+		width: 100%;
 	}
 
-	/* Sitenin `#bottom` kuralı. */
+	/* openani.me canlı CSS kuralı: #bottom { margin-bottom: .75rem } */
 	#bottom {
-		padding-top: 0;
 		margin-bottom: 0.75rem;
 	}
 
-	/* --- ListItem'ı şerit ölçüsüne getir ---------------------------------
-	   `:global` şart: sınıf `ListItem`'ın kök elemanına gidiyor. Değiştirilen
-	   şeylerin hepsi YERLEŞİM; renk ve durum stilleri bileşenden geliyor. */
-	.sidebar :global(.list-item) {
+	.sidebar button.list-item {
 		position: relative;
-		inline-size: 4rem;
-		block-size: 3.7rem;
+		width: 4rem;
+		height: 3.7rem;
 		padding-inline: 0;
-		margin: 0;
 		display: flex;
 		justify-content: center;
 		align-items: center;
-		/* Etiket ve ikon kutunun dışına taşmasın. */
+		margin: 0;
 		overflow: hidden;
+		border-radius: var(--fds-control-corner-radius);
+		border: none;
+		background: transparent;
+		outline: none;
+		cursor: pointer;
+		transition: background-color var(--fds-control-fast-duration) ease,
+			transform var(--fds-control-faster-duration) var(--fds-control-fast-out-slow-in-easing);
 	}
 
-	/* Aktif göstergenin ölçüsü: sitede 3px/16px değil, .25rem/1.5rem. */
-	.sidebar :global(.list-item::before) {
+	.sidebar button.list-item:hover:not(.disabled) {
+		background-color: var(--fds-subtle-fill-secondary);
+	}
+
+	.sidebar button.list-item:active:not(.disabled) {
+		background-color: var(--fds-subtle-fill-tertiary);
+		transform: scale(0.97);
+	}
+
+	/* Sol kenar aktif çubuğu (24px x 4px kapsül) */
+	.sidebar button.list-item::before {
+		content: "";
+		position: absolute;
+		inset-inline-start: 0;
 		inline-size: 0.25rem;
 		block-size: 1.5rem;
+		border-radius: 999px;
+		background-color: var(--fds-accent-default);
+		opacity: 0;
+		transform: scaleY(0);
+		transition: transform var(--fds-control-fast-duration) var(--fds-control-fast-out-slow-in-easing),
+			opacity var(--fds-control-fast-duration) ease;
 	}
 
-	/* Seçili öğenin zemini — sitenin kendi değeri. */
-	.sidebar :global(.list-item.selected) {
+	.sidebar button.list-item.selected::before {
+		opacity: 1;
+		transform: scaleY(1);
+	}
+
+	/* Selected zemin rengi (#454545 / var(--fds-control-solid-fill-default)) */
+	.sidebar button.list-item.selected {
 		background-color: var(--fds-control-solid-fill-default);
+		animation: selected-in var(--fds-control-fast-duration);
 	}
 
-	/* `ListItem` varsayılan slot'u bir `TextBlock` içine sarıyor; payı
-	   sıfırlanmazsa içerik şeritte ortalanmıyor. */
-	.sidebar :global(.list-item > .text-block) {
-		margin: 0;
-		display: flex;
+	@keyframes selected-in {
+		0% {
+			background-color: var(--fds-control-strong-fill-disabled);
+		}
+		to {
+			background-color: var(--fds-control-solid-fill-default);
+		}
+	}
+
+	.sidebar button.list-item.disabled {
+		opacity: 0.38;
+		pointer-events: none;
+		cursor: default;
+	}
+
+	.sidebar button.list-item > span {
+		display: flex !important;
 		justify-content: center;
 		align-items: center;
-	}
-
-	/* --- Öğe içi: ikon üstte, etiket altta ------------------------------- */
-	.entry {
-		display: flex;
 		flex-direction: column;
-		justify-content: center;
-		align-items: center;
 		min-width: 24px;
 		min-height: 24px;
-		color: var(--fds-text-tertiary);
-		/* Aktif durum geçişi yumuşak olsun — sitenin kendi kuralı. */
+		width: 100%;
+		height: 100%;
+		color: var(--fds-text-tertiary) !important;
 		transition: color var(--fds-control-faster-duration) ease;
 	}
 
-	/* Etiket her öğede duruyor, dolayısıyla ikon sabit bir alt pay bırakıp
-	   ona yer açıyor (sitenin `.iconify { margin-bottom: .75rem }` kuralı). */
-	.entry :global(.icon) {
+	/* Seçili olduğunda ikon ve span rengi accent rengine döner (#61caff) */
+	.sidebar button.list-item.selected > span {
+		color: var(--fds-accent-default) !important;
+	}
+
+	.sidebar button.list-item :global(.icon) {
 		margin-bottom: 0.75rem;
+		transition: margin-bottom var(--fds-control-fast-duration) var(--fds-control-fast-out-slow-in-easing),
+			transform var(--fds-control-fast-duration) var(--fds-control-fast-out-slow-in-easing);
 	}
 
-	/* Aktif öğe: yalnızca İKON rengi vurgu rengine döner. */
-	.entry.selected {
-		color: var(--fds-accent-default);
+	/* Seçildiğinde ikon merkeze oturur (margin-bottom: 0) */
+	.sidebar button.list-item.selected :global(.icon) {
+		margin-bottom: 0;
 	}
 
-	.entry.disabled {
-		color: var(--fds-text-disabled);
+	.sidebar button.list-item:hover:not(.disabled) :global(.icon) {
+		transform: scale(1.08);
 	}
 
-	/* Etiket: sitedeki `#label` sarmalayıcısının karşılığı — akıştan çıkarılmış,
-	   dibe .25rem uzaklıkta. Akıştan çıkması, ikonun dikey hizasını etiketin
-	   uzunluğundan bağımsız tutuyor. */
-	.label {
+	.sidebar button #label {
 		position: absolute;
 		bottom: 0.25rem;
 		pointer-events: none;
-		max-width: 100%;
-		overflow: hidden;
+		text-align: center;
+		white-space: nowrap;
+		opacity: 1;
+		visibility: visible;
+		transition: opacity var(--fds-control-fast-duration) ease,
+			visibility var(--fds-control-fast-duration) ease;
 	}
 
-	/* Sitedeki etiket `type-caption` + `text-tertiary` + satır içi 10px.
-	   Rengi ikondan BAĞIMSIZ: öğe seçiliyken ikon accent'e döner, etiket
-	   üçüncül metin renginde kalır — sitede de böyle. */
-	.label :global(.text-block) {
-		display: block;
-		font-size: 10px;
-		line-height: 1;
-		color: var(--fds-text-tertiary);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	/* Seçili durumda alt metin etiketi gizlenir */
+	.sidebar button.list-item.selected #label {
+		opacity: 0;
+		visibility: hidden;
+	}
+
+	.sidebar button #label span {
+		font-size: 10px !important;
+		color: var(--fds-text-tertiary) !important;
+		line-height: 12px;
+		letter-spacing: 0.1px;
 	}
 </style>

@@ -27,7 +27,13 @@ export interface ColorState {
 export function catalogDefault(token: string, mode: string): string | undefined {
 	const info = FDS_TOKENS.find((t) => t.name === token);
 	if (!info) return undefined;
-	return mode === "light" ? (info.light ?? info.root) : (info.dark ?? info.root);
+	const effectiveMode =
+		mode === "system"
+			? typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: light)").matches
+				? "light"
+				: "dark"
+			: mode;
+	return effectiveMode === "light" ? (info.light ?? info.root) : (info.dark ?? info.root);
 }
 
 /**
@@ -97,10 +103,10 @@ export const SITE_DEFAULTS = {
 
 	// .sidebar { min-width: 4.5rem; max-width: 4.5rem }  ->  72px
 	sidebarWidth: 72,
-	// .list-item::before { inline-size: 3px; block-size: 16px; border-radius: 3px }
-	sidebarIndicatorWidth: 3,
-	sidebarIndicatorHeight: 16,
-	sidebarIndicatorRadius: 3,
+	// .list-item::before { inline-size: .25rem; block-size: 1.5rem; border-radius: 999px } (4px x 24px capsule)
+	sidebarIndicatorWidth: 4,
+	sidebarIndicatorHeight: 24,
+	sidebarIndicatorRadius: 999,
 
 	// .topbar .logo img { width: 1.1rem; height: 1.1rem }  ->  17.6px
 	logoSize: 18,

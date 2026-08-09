@@ -154,8 +154,8 @@ test("sayısal varsayılanlar sitenin canlı CSS'iyle eşleşir", () => {
 	expect(adv.scrollbar.trackRadius).toBe(50); // --os-track-border-radius: 50px
 	expect(adv.avatar.size).toBe(32); // --fds-person-picture-size: 32px
 	expect(adv.sidebar.width).toBe(72); // .sidebar { min-width: 4.5rem }
-	expect(adv.sidebar.indicatorWidth).toBe(3); // .list-item::before { inline-size: 3px }
-	expect(adv.sidebar.indicatorHeight).toBe(16); // block-size: 16px
+	expect(adv.sidebar.indicatorWidth).toBe(4); // .list-item::before { inline-size: .25rem (4px) }
+	expect(adv.sidebar.indicatorHeight).toBe(24); // block-size: 1.5rem (24px)
 	expect(adv.banner.progressHeight).toBe(5); // #progress { height: .3rem }
 	expect(adv.banner.progressColor).toBe("#ffffff"); // #progress { background: #fff }
 	expect(adv.typo.scale).toBe(1); // ölçek yok = sitenin boyutları

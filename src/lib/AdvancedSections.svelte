@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { Button, ComboBox, IconButton, InfoBar, Slider, TextBlock, TextBox, ToggleSwitch, Tooltip } from "fluent-svelte-extra";
+	import { Button, ComboBox, IconButton, Slider, TextBlock, TextBox, ToggleSwitch, Tooltip } from "fluent-svelte-extra";
 
 	import ColorField from "$lib/ColorField.svelte";
 	import Icon from "$lib/Icon.svelte";
+	import StatusBar from "$lib/StatusBar.svelte";
 	import Section from "$lib/Section.svelte";
 	import { CARD_TOKENS, FONT_PRESETS, MASCOT_SLOTS, TEXT_TOKENS } from "$lib/advanced";
 	import { LINK_TOKENS, SURFACE_TOKENS, SYSTEM_TOKENS } from "$lib/customization";
@@ -236,7 +237,7 @@
 </Section>
 
 <Section icon="link" title="Bağlantılar" onReset={reset("links")}>
-	<InfoBar
+	<StatusBar
 		severity="information"
 		title="Vurgudan bağımsız"
 		message="Site bağlantıları --fds-accent-* rampasından değil, ayrı bir --fds-accent-text-* setinden boyuyor (.button.style-hyperlink). Yani vurgu rengini değiştirmeden bağlantıları ayrı renklendirebilirsiniz."
@@ -254,7 +255,7 @@
 </Section>
 
 <Section icon="scrollbar" title="Kaydırma çubuğu" onReset={reset("scrollbar")}>
-	<InfoBar
+	<StatusBar
 		severity="information"
 		title="Sitenin kendi API'si kullanılıyor"
 		message="Site OverlayScrollbars kütüphanesini kullanır ve varsayılan ::-webkit-scrollbar stil tanımlarını devre dışı bırakır. Buradaki ayarlar sitenin doğrudan okuduğu --os-* değişkenlerini günceller."
@@ -362,7 +363,7 @@
 		Sitenin orijinal logosu ve adı gizlenir; yerine buradan seçtiğiniz görsel
 		ve metin gösterilir.
 	</TextBlock>
-	<InfoBar
+	<StatusBar
 		severity="information"
 		title="Bağımsız"
 		message="Logo görseli ve site adı ayrı ayrı tutulur: yalnızca adı değiştirirseniz logo yerinde kalır. NEXT-GEN rozeti hiçbir durumda gizlenmez; uzun adlar rozete taşmadan üç noktayla kısalır."
@@ -503,7 +504,7 @@
 	</TextBlock>
 
 	<ToggleSwitch bind:checked={adv.mascot.sizeOn}>Boyutları ayarla</ToggleSwitch>
-	<InfoBar
+	<StatusBar
 		severity="information"
 		title="Yalnızca sabit ölçülü örnekler"
 		message="Genel ve diyalog maskotları sitede akışkan boyutlu (height: 100%, width: auto) — onlara sabit ölçü vermek düzeni bozar, o yüzden kaydırıcıları yok. Diğer üçünün sitedeki gerçek ölçüsü 170, 170 ve 150px."
@@ -668,7 +669,7 @@
 	</div>
 
 	<TextBlock variant="bodyStrong">Altyazı</TextBlock>
-	<InfoBar
+	<StatusBar
 		severity="caution"
 		title="Sınırlı destek"
 		message="Site altyazıyı iki yolla çiziyor: native track (video::cue — CSS işler) ve ASS/SSA için <canvas> (CSS işlemez). Bu ayarlar yalnızca native track kullanan bölümlerde etkili olur."

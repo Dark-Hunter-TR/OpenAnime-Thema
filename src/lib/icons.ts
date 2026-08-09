@@ -62,6 +62,25 @@ import navSettingsOn from "@fluentui/svg-icons/icons/settings_24_filled.svg?raw"
 import navAbout from "@fluentui/svg-icons/icons/info_24_regular.svg?raw";
 import navAboutOn from "@fluentui/svg-icons/icons/info_24_filled.svg?raw";
 
+// --- Durum kutuları ---------------------------------------------------------
+//
+// InfoBar'ın kendi varsayılan ikonu `InfoBadge`: 16px'lik renkli bir hap ve
+// içinde 8px'lik çıplak bir glif (düz onay işareti, çarpı, ünlem). Bunlar
+// Fluent System Icons setinden DEĞİL. Sitenin durum kutularında kullandığı
+// 20px'lik daireli ikonların karşılıkları bunlar; `StatusBar` her önem
+// derecesine doğru olanı bağlıyor.
+//
+// 20'lik ızgaradan geliyorlar (24'lük değil): bu ikonlar 20px çizilecek ve
+// Fluent'te her ölçünün kendi optik olarak düzeltilmiş çizimi var.
+import statusSuccess from "@fluentui/svg-icons/icons/checkmark_circle_20_regular.svg?raw";
+import statusInfo from "@fluentui/svg-icons/icons/info_20_regular.svg?raw";
+import statusCaution from "@fluentui/svg-icons/icons/warning_20_regular.svg?raw";
+import statusCritical from "@fluentui/svg-icons/icons/error_circle_20_regular.svg?raw";
+
+// Boş durum ekranı. 48'lik ızgara: boş durum ikonları 48–64px çiziliyor ve
+// 24'lük glifi büyütmek çizgi kalınlığını orantısız bırakırdı.
+import emptyThemes from "@fluentui/svg-icons/icons/folder_48_regular.svg?raw";
+
 // --- Proje yönetimi ---------------------------------------------------------
 import add from "@fluentui/svg-icons/icons/add_24_regular.svg?raw";
 import github from "@fluentui/svg-icons/icons/branch_fork_24_regular.svg?raw";
@@ -136,6 +155,11 @@ export const ICONS = {
 	navSettingsOn,
 	navAbout,
 	navAboutOn,
+	statusSuccess,
+	statusInfo,
+	statusCaution,
+	statusCritical,
+	emptyThemes,
 	add,
 	github,
 	download,

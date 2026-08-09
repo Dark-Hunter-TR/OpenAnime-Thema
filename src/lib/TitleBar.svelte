@@ -95,39 +95,61 @@
 
 <style>
 	/* Renk ve tipografi kararları --fds-* token'larından; buradaki tek sabit
-	   değer kapatma düğmesinin kırmızısı (aşağıda gerekçesi var). */
-	/* Izgara, çünkü orta bölge yan bölgelerin genişliğinden BAĞIMSIZ olarak
-	   gerçekten ortalanmalı; `space-between` ile ortadaki metin sol taraf
-	   uzadıkça kayardı. Sitenin üst barı da aynı üç bölgeli düzende. */
+	   değer kapatma düğmesinin kırmızısı (aşağıda gerekçesi var).
+
+	   Yerleşim sitenin canlı `.topbar` kuralının birebir aynısı
+	   (`openanime-CtLsnAnr.css`, `svelte-1jpbqve` kapsamı):
+
+	     .topbar        { padding: .6rem; position: relative; width: 100%;
+	                      z-index: 100; display: flex; align-items: center;
+	                      justify-content: space-between;
+	                      transition: all var(--fds-control-fast-duration) }
+	     .topbar .logo  { display: flex; align-items: center; justify-content: center }
+	     .topbar .logo img { margin-left: .75rem; margin-right: 1rem;
+	                         width: 1.1rem; height: 1.1rem }
+	     #search        { position: absolute; left: 50%; transform: translate(-50%);
+	                      width: 40%; z-index: 1 }
+	     .header-right  { display: flex; gap: .5rem; align-items: center }
+
+	   Sitede üst barın kendi zemini ve alt kenarlığı YOK; altındaki gövde
+	   rengini gösteriyor. Sabit yükseklik de yok: yükseklik .6rem dolgu +
+	   en uzun içerikten (32px'lik hesap avatarı / bizde pencere düğmeleri)
+	   çıkıyor. İkisini de aynen alıyoruz. */
 	.titlebar {
 		flex: 0 0 auto;
-		height: 40px;
-		display: grid;
-		grid-template-columns: 1fr auto 1fr;
+		position: relative;
+		width: 100%;
+		z-index: 100;
+		display: flex;
 		align-items: center;
-		padding: 0 4px 0 12px;
+		justify-content: space-between;
+		transition: all var(--fds-control-fast-duration);
+		/* Sağ dolgu 4px: pencere düğmeleri Windows konvansiyonu gereği
+		   köşeye yakın durmalı, .6rem onları içeri kaçırırdı. */
+		padding: 0.6rem 4px 0.6rem 0.6rem;
 		box-sizing: border-box;
-		gap: 8px;
-		background-color: var(--fds-solid-background-tertiary);
-		border-bottom: 1px solid var(--fds-divider-stroke-default);
 		/* Başlık çubuğu bir sürükleme yüzeyi; metin seçimi imleci burada
 		   sürüklemeyi bozuyor. */
 		user-select: none;
 		-webkit-user-select: none;
 	}
 
+	/* Sitenin `.topbar .logo` kuralı. */
 	.brand {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		min-width: 0;
-		height: 100%;
+		transition: all var(--fds-control-fast-duration);
 	}
 
-	/* Sitenin `.topbar .logo img` ölçüsü 1.1rem; sağındaki boşluk da onun. */
+	/* Sitenin `.topbar .logo img` kuralı: 1.1rem kare, solda .75rem,
+	   sağda 1rem boşluk. */
 	.app-icon {
 		width: 1.1rem;
 		height: 1.1rem;
-		margin-right: 0.5rem;
+		margin-left: 0.75rem;
+		margin-right: 1rem;
 		flex: none;
 	}
 
@@ -155,13 +177,20 @@
 		letter-spacing: 0.5px;
 	}
 
-	/* Orta bölge: sitede arama kutusunun durduğu yer. */
+	/* Orta bölge: sitede arama kutusunun durduğu yer, onun geometrisiyle.
+	   Akıştan çıkarılmış olması şart — `space-between` ile hizalansaydı sol
+	   bölge uzadıkça (uzun proje adı) kayardı; sitede de bu yüzden mutlak. */
 	.context {
+		position: absolute;
+		left: 50%;
+		transform: translate(-50%);
+		width: 40%;
+		z-index: 1;
+		transition: all ease-out 0.2s;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		min-width: 0;
-		height: 100%;
 		color: var(--fds-text-secondary);
 		overflow: hidden;
 		white-space: nowrap;
