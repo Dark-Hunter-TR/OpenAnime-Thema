@@ -15,6 +15,7 @@
 	 * Kopya değil, aynı tasarım dilinin devamı: bizim bölümlerimiz uygulamanın
 	 * kendi ayarları.
 	 */
+	import { createEventDispatcher } from "svelte";
 	import {
 		Button,
 		ComboBox,
@@ -40,6 +41,16 @@
 	/** Önizlemede openani.me oturumu açık mı (Rust çerez kavanozundan okuyor). */
 	export let loggedIn = false;
 	export let onOpenAccount: () => void;
+
+	const dispatch = createEventDispatcher<{ change: AppSettings }>();
+
+	function notifyChange() {
+		dispatch("change", settings);
+	}
+
+	$: if (settings) {
+		notifyChange();
+	}
 
 	const routeItems = ROUTES.map((route) => ({
 		name: route.auth ? `${route.name} (giriş gerekir)` : route.name,
@@ -223,6 +234,23 @@
 				</div>
 			</Expander>
 		</section>
+
+		<!-- --- Hakkında ----------------------------------------------------- -->
+		<section class="expand-section">
+			<TextBlock variant="bodyStrong">Hakkında</TextBlock>
+
+			<Expander expandable={false}>
+				<Icon slot="icon" name="navAbout" size={20} />
+				<div class="item">
+					<span class="item-header">
+						<TextBlock variant="body">OpenAnime Tema Editörü</TextBlock>
+						<TextBlock variant="caption">
+							Sürüm {appVersion || "v0.1.0"}
+						</TextBlock>
+					</span>
+				</div>
+			</Expander>
+		</section>
 	</div>
 </div>
 
@@ -291,19 +319,6 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-	}
-
-	/* "Hakkında" bölümünün gövdesi baştan sona açıklama metni; `.item-header`
-	   ile aynı gerekçeyle ikincil renkte. */
-	.about {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		padding: 12px;
-	}
-
-	.about :global(.text-block) {
-		color: var(--fds-text-secondary);
 	}
 
 	.gap {

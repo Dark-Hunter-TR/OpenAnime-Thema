@@ -46,7 +46,8 @@ export const applyTheme = (doc: ThemeDoc) => invoke<ApplyResult>("apply_theme", 
  * `applyTheme`'in ters yönü — görsel kontroller ile kod editörü aynı state
  * üzerinde çalışsın diye.
  */
-export const applyCssText = (text: string) => invoke<ThemeDoc>("apply_css_text", { text });
+export const applyCssText = (text: string, knownSelectors: string[] = []) =>
+	invoke<ThemeDoc>("apply_css_text", { text, knownSelectors });
 
 /** Harici bir .css dosyasını okur (yol, dosya seçicisinden gelir). */
 export const readCssFile = (path: string) => invoke<string>("read_css_file", { path });

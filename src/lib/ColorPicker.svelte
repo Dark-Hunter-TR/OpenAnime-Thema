@@ -130,6 +130,20 @@
 	function emit() {
 		selfEdit = true;
 		hex = toHex(hsvToRgb(hue, sat, val));
+		lastSent = hex;
+		dispatch("change", hex);
+	}
+
+	function onHueSlider(e: any) {
+		let nextHue = hue;
+		if (Array.isArray(e?.detail) && typeof e.detail[1] === "number") {
+			nextHue = e.detail[1];
+		} else if (typeof e?.detail === "number") {
+			nextHue = e.detail;
+		}
+		hue = nextHue;
+		appliedHue = hue;
+		emit();
 	}
 
 	// --- SV alanı -----------------------------------------------------------
@@ -224,7 +238,16 @@
 	</div>
 
 	<div class="hue">
-		<Slider bind:value={hue} min={0} max={360} step={1} {disabled} />
+		<Slider
+			bind:value={hue}
+			min={0}
+			max={360}
+			step={1}
+			{disabled}
+			on:input={onHueSlider}
+			on:change={onHueSlider}
+			on:userChange={onHueSlider}
+		/>
 	</div>
 
 	<div class="inputs">

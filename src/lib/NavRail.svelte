@@ -68,7 +68,6 @@
 	const isDisabled = (entry: NavEntry) => entry.id === "editor" && !editorEnabled;
 
 	function go(entry: NavEntry) {
-		if (isDisabled(entry)) return;
 		if (entry.id === "about") {
 			onOpenAbout();
 			return;
@@ -245,9 +244,11 @@
 		transition: color var(--fds-control-faster-duration) ease;
 	}
 
-	/* Seçili olduğunda ikon ve span rengi accent rengine döner (#61caff) */
-	.sidebar button.list-item.selected > span {
-		color: var(--fds-accent-default) !important;
+	/* Seçili olduğunda ikon ve span rengi accent rengine döner */
+	.sidebar button.list-item.selected > span,
+	.sidebar button.list-item.selected :global(svg) {
+		color: var(--fds-accent-text-primary, var(--fds-accent-default)) !important;
+		fill: currentColor !important;
 	}
 
 	.sidebar button.list-item :global(.icon) {

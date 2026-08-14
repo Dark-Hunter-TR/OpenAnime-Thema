@@ -57,10 +57,12 @@ fn apply_css_text(
     app: AppHandle,
     state: State<ThemeState>,
     text: String,
+    known_selectors: Option<Vec<String>>,
 ) -> Result<ThemeDoc, String> {
+    let known = known_selectors.unwrap_or_default();
     let (doc, mode) = {
         let mut current = state.0.lock().map_err(|e| e.to_string())?;
-        let parsed = parse_css(&text, &current);
+        let parsed = parse_css(&text, &known, &current);
         *current = parsed.clone();
         (parsed, current.mode)
     };

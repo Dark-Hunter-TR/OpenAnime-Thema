@@ -415,6 +415,11 @@ export const KNOWN_SELECTORS: string[] = [
 	BG_BODY_SELECTOR,
 	BG_TRANSPARENT_SELECTOR,
 	`${BG_BODY_SELECTOR}::before`,
+	`${BG_BODY_SELECTOR}::after`,
+	"body::before",
+	"body::after",
+	".banner.gradient-scene",
+	".scene-inner-content:has(.new-playlist)>.banner.gradient-scene",
 	// Maskot yuvaları: her biri ayrı bir selector taşıyor.
 	...MASCOT_SLOTS.map((slot) => slot.selector)
 ];

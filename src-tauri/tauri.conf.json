@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "title": "OpenAnime Theme",
         "label": "main",
         "width": 1400,
         "height": 900,

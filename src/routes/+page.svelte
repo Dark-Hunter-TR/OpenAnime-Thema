@@ -79,11 +79,24 @@
 	} from "$lib/theme";
 	import { PARAM_ROUTES, ROUTES, SITE_ORIGIN, VIEWPORTS } from "$lib/routes";
 	import {
+		BADGE_SELECTOR,
 		BG_BODY_SELECTOR,
+		BG_TRANSPARENT_SELECTOR,
+		CARD_SELECTOR,
+		ENHANCED_SELECTOR,
+		FONT_PRESETS,
 		KNOWN_SELECTORS,
+		LOGO_IMAGE_HIDE_SELECTOR,
 		LOGO_IMAGE_SELECTOR,
+		LOGO_ROW_SELECTOR,
 		LOGO_TEXT_SELECTOR,
-		MASCOT_SLOTS
+		MASCOT_SLOTS,
+		PLAYER_BAR_SELECTOR,
+		PLAYER_EPISODE_SELECTOR,
+		PLAYER_SLIDER_SELECTOR,
+		RELEASED_BADGE_SELECTOR,
+		SCROLLBAR_SELECTOR,
+		SIDEBAR_SELECTOR
 	} from "$lib/advanced";
 	import {
 		BUTTON_TEXT_SELECTOR,
@@ -92,6 +105,7 @@
 		EASINGS,
 		EASING_TOKEN,
 		HOVER_TOKENS,
+		SIDEBAR_SELECTED_TOKEN,
 		fromCssColor,
 		hexToRgb,
 		hslToRgb,
@@ -122,6 +136,7 @@
 	let lastPushed = "";
 
 	let editMode: "visual" | "code" = "visual";
+	let editorCategory: "colors" | "shape" | "motion" | "media" | "components" | "advanced" = "colors";
 
 	// --- Üst düzey görünüm ---------------------------------------------------
 	// Uygulama artık doğrudan editöre düşmüyor: açılışta ana ekran gelir.
@@ -189,7 +204,6 @@
 
 	function setMode(mode: "system" | "light" | "dark") {
 		doc.mode = mode;
-		seedMode = mode;
 	}
 
 	let motionEnabled = false;
@@ -297,11 +311,15 @@
 		} else {
 			if (nextTokens !== lastTokenMap) {
 				lastTokenMap = nextTokens;
-				doc.tokenOverrides = tokenMap;
+				doc.tokenOverrides = { ...doc.tokenOverrides, ...tokenMap };
 			}
 			if (nextRules !== lastRuleMap) {
 				lastRuleMap = nextRules;
-				doc.ruleOverrides = ruleMap;
+				const merged = { ...doc.ruleOverrides, ...ruleMap };
+				if (!adv.logo.textOn) delete merged[LOGO_TEXT_SELECTOR];
+				if (!adv.logo.imageOn) delete merged[LOGO_IMAGE_SELECTOR];
+				if (!adv.bg.on) delete merged[`${BG_BODY_SELECTOR}::before`];
+				doc.ruleOverrides = merged;
 			}
 		}
 	}
@@ -337,6 +355,11 @@
 	/** Kod tarafından çözümlenen dokümanı kontrollere geri yansıtır. */
 	function adoptDoc(next: ThemeDoc) {
 		adopting = true;
+		if (next.accent) {
+			accentH = next.accent[0];
+			accentS = next.accent[1];
+			accentL = next.accent[2];
+		}
 		radiusEnabled = next.controlCornerRadius !== null || next.overlayCornerRadius !== null;
 		if (next.controlCornerRadius !== null) controlRadius = next.controlCornerRadius;
 		if (next.overlayCornerRadius !== null) overlayRadius = next.overlayCornerRadius;
@@ -363,7 +386,6 @@
 			const parsed = fromCssColor(textRule.replace(/^\s*color\s*:\s*/, "").replace(/;\s*$/, ""));
 			if (parsed) buttonTextHex = parsed.hex;
 		}
-
 		// Animasyon: ölçeği "normal" süreden geri hesapla.
 		motionEnabled = DURATION_TOKENS.some((d) => next.tokenOverrides[d.token] !== undefined);
 		const normal = next.tokenOverrides["--fds-control-normal-duration"];
@@ -373,42 +395,196 @@
 		}
 		if (next.tokenOverrides[EASING_TOKEN]) motionEasing = next.tokenOverrides[EASING_TOKEN];
 
-		// --- Gelişmiş bölümler: görsel taşıyan ayarları geri çöz ---------------
-		// Sayısal oynatıcı/kart ayarları geri çözülmüyor; onların CSS'i
-		// `ruleOverrides` içinde olduğu gibi korunuyor, yani kayıp yok.
-		// Görselleri (logo, maskot, arkaplan) çözüyoruz çünkü kaybolmaları
-		// kullanıcı için en pahalısı olurdu.
-		const url = (rule: string | undefined) => rule?.match(/url\("([^"]+)"\)/)?.[1] ?? "";
+		// --- Gelişmiş bölümler: tüm gelişmiş ayarları ve görselleri çöz -----------
+		const resolveUrl = (rule: string | undefined, tokens: Record<string, string>): string => {
+			if (!rule) return "";
+			// 1. Doğrudan url(...) eşleşmesi
+			const direct = rule.match(/url\(\s*["']?([^"'\s)]+)["']?\s*\)/i);
+			if (direct && direct[1] && !direct[1].startsWith("var(")) {
+				return direct[1];
+			}
+			// 2. Kural içindeki var(--değişken) başvurusu
+			const varMatches = Array.from(rule.matchAll(/var\(\s*(--[a-zA-Z0-9_-]+)/gi));
+			for (const v of varMatches) {
+				const varName = v[1];
+				const varValue = tokens[varName];
+				if (varValue) {
+					const innerMatch = varValue.match(/url\(\s*["']?([^"'\s)]+)["']?\s*\)/i);
+					if (innerMatch && innerMatch[1]) {
+						return innerMatch[1];
+					}
+				}
+			}
+			return "";
+		};
 
-		const logoImage = url(next.ruleOverrides[LOGO_IMAGE_SELECTOR]);
+		// Logo görselini kural, gizleme seçicisi veya öncelikli değişkenlerden çöz
+		let logoImage = resolveUrl(next.ruleOverrides[LOGO_IMAGE_SELECTOR], next.tokenOverrides);
+		if (!logoImage) {
+			logoImage = resolveUrl(next.ruleOverrides[LOGO_IMAGE_HIDE_SELECTOR], next.tokenOverrides);
+		}
+		if (!logoImage) {
+			const priorityVars = [
+				"--url-logo",
+				"--logo-url",
+				"--logo-image",
+				"--url-icon",
+				"--icon-url",
+				"--logo-src",
+				"--logo"
+			];
+			for (const pVar of priorityVars) {
+				const val = next.tokenOverrides[pVar];
+				if (val) {
+					const m = val.match(/url\(\s*["']?([^"'\s)]+)["']?\s*\)/i);
+					if (m && m[1]) {
+						logoImage = m[1];
+						break;
+					}
+				}
+			}
+		}
 		adv.logo.dataUri = logoImage;
 		adv.logo.imageOn = logoImage !== "";
 
-		const logoText = next.ruleOverrides[LOGO_TEXT_SELECTOR]?.match(
-			/content\s*:\s*"((?:[^"\\]|\\.)*)"/
-		)?.[1];
-		adv.logo.text = logoText ? logoText.replace(/\\(["\\])/g, "$1") : "";
-		adv.logo.textOn = adv.logo.text !== "";
+		const logoTextMatch = next.ruleOverrides[LOGO_TEXT_SELECTOR]?.match(
+			/content\s*:\s*['"]((?:[^'"\\]|\\.)*)['"]/i
+		);
+		const logoText = logoTextMatch ? logoTextMatch[1].replace(/\\(["'\\])/g, "$1") : "";
+		adv.logo.text = logoText;
+		adv.logo.textOn = logoText !== "";
 
-		const bgImage = url(next.ruleOverrides[`${BG_BODY_SELECTOR}::before`]);
+		const logoRowRule = next.ruleOverrides[LOGO_ROW_SELECTOR] ?? "";
+		const gapMatch = logoRowRule.match(/gap\s*:\s*(\d+)px/i);
+		if (gapMatch) adv.logo.gap = Number(gapMatch[1]);
+
+		const logoImgRule = next.ruleOverrides[LOGO_IMAGE_SELECTOR] ?? "";
+		const sizeMatch = logoImgRule.match(/width\s*:\s*(\d+)px/i);
+		if (sizeMatch) adv.logo.size = Number(sizeMatch[1]);
+
+		// Arkaplan görselini body::before, body::after, banner veya değişkenlerden çöz
+		let bgImage = resolveUrl(next.ruleOverrides[`${BG_BODY_SELECTOR}::before`], next.tokenOverrides);
+		if (!bgImage) {
+			bgImage =
+				resolveUrl(next.ruleOverrides[`${BG_BODY_SELECTOR}::after`], next.tokenOverrides) ||
+				resolveUrl(next.ruleOverrides["body::before"], next.tokenOverrides) ||
+				resolveUrl(next.ruleOverrides["body::after"], next.tokenOverrides) ||
+				resolveUrl(next.ruleOverrides[BG_BODY_SELECTOR], next.tokenOverrides) ||
+				resolveUrl(next.ruleOverrides[BG_TRANSPARENT_SELECTOR], next.tokenOverrides) ||
+				resolveUrl(
+					next.ruleOverrides[
+						".scene-inner-content:has(.new-playlist)>.banner.gradient-scene"
+					],
+					next.tokenOverrides
+				) ||
+				resolveUrl(next.ruleOverrides[".banner.gradient-scene"], next.tokenOverrides);
+		}
+		if (!bgImage) {
+			const priorityVars = [
+				"--url-bg",
+				"--bg-url",
+				"--background-url",
+				"--bg-image",
+				"--url-background",
+				"--background-image",
+				"--bg-page"
+			];
+			for (const pVar of priorityVars) {
+				const val = next.tokenOverrides[pVar];
+				if (val) {
+					const m = val.match(/url\(\s*["']?([^"'\s)]+)["']?\s*\)/i);
+					if (m && m[1]) {
+						bgImage = m[1];
+						break;
+					}
+				}
+			}
+		}
 		adv.bg.dataUri = bgImage;
 		adv.bg.on = bgImage !== "";
 
 		for (const slot of MASCOT_SLOTS) {
-			const image = url(next.ruleOverrides[slot.selector]);
+			const image = resolveUrl(next.ruleOverrides[slot.selector], next.tokenOverrides);
 			if (image) adv.mascot.images[slot.id] = image;
 			else delete adv.mascot.images[slot.id];
 		}
+
+		// Kartlar
+		const cardRule = next.ruleOverrides[CARD_SELECTOR];
+		if (cardRule || next.tokenOverrides["--fds-card-background-default"]) {
+			adv.cards.on = true;
+			if (cardRule) {
+				const rMatch = cardRule.match(/border-radius\s*:\s*(\d+)px/i);
+				if (rMatch) adv.cards.radius = Number(rMatch[1]);
+				const bMatch = cardRule.match(/border-width\s*:\s*(\d+)px/i);
+				if (bMatch) adv.cards.borderWidth = Number(bMatch[1]);
+			}
+		}
+
+		// Kenar çubuğu
+		const sidebarRule = next.ruleOverrides[SIDEBAR_SELECTOR];
+		if (sidebarRule || next.tokenOverrides[SIDEBAR_SELECTED_TOKEN.token]) {
+			adv.sidebar.on = true;
+			if (sidebarRule) {
+				const wMatch = sidebarRule.match(/width\s*:\s*([\d.]+)rem/i);
+				if (wMatch) adv.sidebar.width = Number(wMatch[1]);
+			}
+		}
+
+		// Rozetler
+		if (
+			next.ruleOverrides[BADGE_SELECTOR] ||
+			next.ruleOverrides[RELEASED_BADGE_SELECTOR] ||
+			next.ruleOverrides[ENHANCED_SELECTOR]
+		) {
+			adv.badges.on = true;
+		}
+
+		// Kaydırma çubuğu
+		if (next.ruleOverrides[SCROLLBAR_SELECTOR]) {
+			adv.scrollbar.on = true;
+			const sbRule = next.ruleOverrides[SCROLLBAR_SELECTOR];
+			const szMatch = sbRule.match(/--os-size\s*:\s*(\d+)px/i);
+			if (szMatch) adv.scrollbar.size = Number(szMatch[1]);
+		}
+
+		// Oynatıcı
+		if (
+			next.ruleOverrides[PLAYER_SLIDER_SELECTOR] ||
+			next.ruleOverrides[PLAYER_BAR_SELECTOR] ||
+			next.ruleOverrides[PLAYER_EPISODE_SELECTOR]
+		) {
+			adv.player.on = true;
+		}
+
+		// Tipografi / Yazı Tipi
+		if (
+			next.imports.length > 0 ||
+			next.tokenOverrides["--fds-font-family-text"] ||
+			next.tokenOverrides["--fds-font-family-display"]
+		) {
+			adv.typo.on = true;
+			if (next.imports.length > 0) {
+				const imp = next.imports[0];
+				const foundIndex = FONT_PRESETS.findIndex((p) => p.importUrl === imp);
+				if (foundIndex > 0) {
+					adv.typo.preset = foundIndex;
+				} else {
+					adv.typo.preset = -1;
+					adv.typo.custom = imp;
+				}
+			}
+		}
+
 		adv = adv;
 
 		seedMode = next.mode;
 		doc = next;
-		lastPushed = JSON.stringify(next);
 	}
 
 	const pushCode = debounce(async (text: string) => {
 		try {
-			adoptDoc(await applyCssText(text));
+			adoptDoc(await applyCssText(text, KNOWN_SELECTORS));
 			error = "";
 		} catch (e) {
 			error = String(e);
@@ -517,7 +693,7 @@
 			externalDirty = false;
 			editMode = "code";
 			cssText = contents;
-			adoptDoc(await applyCssText(contents));
+			adoptDoc(await importCssText(contents, KNOWN_SELECTORS));
 			fileStatus = `${selected} açıldı`;
 			error = "";
 		} catch (e) {
@@ -575,6 +751,9 @@
 	}
 
 	function usePreset(hsl: [number, number, number]) {
+		accentH = hsl[0];
+		accentS = hsl[1];
+		accentL = hsl[2];
 		doc = { ...doc, accent: [...hsl] as [number, number, number] };
 	}
 
@@ -622,21 +801,33 @@
 		];
 	}
 
-	// doc.accent -> palet. Saf türetme: `doc.accent` her değiştiğinde
-	// (kaydırıcıdan da, paletten de, önayarlardan da) yeniden hesaplanır.
+	let accentH = 206;
+	let accentS = 100;
+	let accentL = 42;
+
+	function extractSliderVal(e: any): number {
+		if (typeof e?.detail === "number") return e.detail;
+		if (Array.isArray(e?.detail) && typeof e.detail[1] === "number") return e.detail[1];
+		if (typeof e?.target?.value !== "undefined") return Number(e.target.value);
+		return 0;
+	}
+
+	function updateAccentFromSlider(h: number, s: number, l: number) {
+		accentH = h;
+		accentS = s;
+		accentL = l;
+		doc = { ...doc, accent: [h, s, l] };
+	}
+
 	$: accentHex = hslToHex(doc.accent);
 
-	// palet -> doc.accent. `ColorPicker` `bind:hex` KULLANAMIYOR (bkz.
-	// ColorPicker.svelte'teki not: `doc` ile `hex`i iki yönlü bağlasak Svelte
-	// "cyclical dependency: doc → accentHex → doc" derdi), bu yüzden `change`
-	// olayıyla tek yönde yazıyoruz. Döngüye girmez: `accentHex` bu yazımdan
-	// sonra ColorPicker'a aynı değeri geri geçirdiğinde, ColorPicker kendi
-	// `selfEdit` bayrağıyla bunu kendi hex'ini yeniden HSV'ye çözmeden yutar.
 	function onAccentPick(next: string) {
 		const hsl = hexToHsl(next);
-		// Hex kutusuna yarım yazılmış bir değer (`#ff`) geldiyse görmezden gel.
 		if (!hsl) return;
-		doc = { ...doc, accent: hsl };
+		accentH = hsl[0];
+		accentS = hsl[1];
+		accentL = hsl[2];
+		doc = { ...doc, accent: [hsl[0], hsl[1], hsl[2]] };
 	}
 
 	// --- Sıfırlama -----------------------------------------------------------
@@ -666,6 +857,9 @@
 				doc = { ...doc, mode: base.mode };
 				break;
 			case "accent":
+				accentH = base.accent[0];
+				accentS = base.accent[1];
+				accentL = base.accent[2];
 				doc = { ...doc, accent: [...base.accent] as [number, number, number] };
 				break;
 			case "radius":
@@ -776,7 +970,20 @@
 		currentPath
 	} as EditorUiState;
 
-	$: projectSignature = JSON.stringify({ doc, ui: uiState, cssText, externalPath });
+	$: docSignature = { ...doc, mode: undefined };
+	$: uiSignature = {
+		...uiState,
+		seedMode: undefined,
+		viewport: undefined,
+		currentPath: undefined,
+		editMode: undefined
+	};
+	$: projectSignature = JSON.stringify({
+		doc: docSignature,
+		ui: uiSignature,
+		cssText,
+		externalPath
+	});
 	$: dirty = projectSignature !== savedSnapshot;
 
 	/**
@@ -791,7 +998,7 @@
 				: "Ana Sayfa";
 
 	function restoreUi(ui: EditorUiState) {
-		editMode = ui.editMode ?? "visual";
+		editMode = ui.editMode ?? settings.defaultEditMode;
 		seedMode = ui.seedMode ?? "dark";
 
 		radiusEnabled = ui.radiusEnabled ?? false;
@@ -815,8 +1022,8 @@
 
 		if (ui.adv) adv = ui.adv;
 
-		viewport = ui.viewport ?? "desktop";
-		currentPath = ui.currentPath ?? "/";
+		viewport = ui.viewport ?? settings.defaultViewport;
+		currentPath = ui.currentPath ?? settings.defaultPreviewPath;
 	}
 
 	// --- Proje: açma, oluşturma, kaydetme ------------------------------------
@@ -969,8 +1176,16 @@
 	 *   · otomatik kaydet açık + yeni proje    -> ad sor (adsız kaydedilemez)
 	 *   · otomatik kaydet kapalı               -> ne yapılacağını sor
 	 */
-	function navigate(next: NavId) {
+	async function navigate(next: NavId) {
 		if (next === view) return;
+
+		if (next === "editor" && !hasOpenProject) {
+			if (projects.length > 0) {
+				await openProject(projects[0].id);
+			} else {
+				await createProject();
+			}
+		}
 
 		if (view === "editor" && dirty) {
 			// Tek sessiz yol: proje zaten diskte VE otomatik kaydetme açık.
@@ -1081,6 +1296,9 @@
 		projectId = "";
 		projectName = externalPath.split(/[\\/]/).pop()?.replace(/\.css$/i, "") || "Harici tema";
 		projectSource = null;
+		editMode = settings.defaultEditMode;
+		viewport = settings.defaultViewport;
+		currentPath = settings.defaultPreviewPath;
 		hasOpenProject = true;
 		view = "editor";
 		await tick();
@@ -1267,6 +1485,11 @@
 		{:else if view === "settings"}
 			<AppSettings
 				bind:settings
+				on:change={() => {
+					settings = { ...settings };
+					saveSettings(settings);
+					if (settings.appTheme) applyAppTheme(settings.appTheme);
+				}}
 				projectCount={projects.length}
 				{projectsPath}
 				{appVersion}
@@ -1338,185 +1561,225 @@
 		</div>
 
 		{#if editMode === "visual"}
+			<div class="category-switch">
+				<SegmentedControl bind:value={editorCategory}>
+					<SegmentedControlButton value="colors" on:click={() => (editorCategory = "colors")}>
+						Renkler
+					</SegmentedControlButton>
+					<SegmentedControlButton value="shape" on:click={() => (editorCategory = "shape")}>
+						Şekil
+					</SegmentedControlButton>
+					<SegmentedControlButton value="motion" on:click={() => (editorCategory = "motion")}>
+						Efekt
+					</SegmentedControlButton>
+					<SegmentedControlButton value="media" on:click={() => (editorCategory = "media")}>
+						Medya
+					</SegmentedControlButton>
+					<SegmentedControlButton value="components" on:click={() => (editorCategory = "components")}>
+						Bileşen
+					</SegmentedControlButton>
+					<SegmentedControlButton value="advanced" on:click={() => (editorCategory = "advanced")}>
+						Gelişmiş
+					</SegmentedControlButton>
+				</SegmentedControl>
+			</div>
+
 			<div class="sections">
-				<Section icon="appearance" title="Görünüm" expanded onReset={() => resetSection("appearance")}>
-					<SegmentedControl bind:value={doc.mode}>
-						<SegmentedControlButton value="system" on:click={() => setMode("system")}>
-							Sistem
-						</SegmentedControlButton>
-						<SegmentedControlButton value="light" on:click={() => setMode("light")}>
-							Açık
-						</SegmentedControlButton>
-						<SegmentedControlButton value="dark" on:click={() => setMode("dark")}>
-							Koyu
-						</SegmentedControlButton>
-					</SegmentedControl>
-				</Section>
+				{#if editorCategory === "colors"}
+					<Section
+						icon="accent"
+						title="Vurgu rengi"
+						expanded
+						onReset={() => resetSection("accent")}
+					>
+						<div class="swatches">
+							{#each ramp as step, i}
+								<Tooltip text="--fds-{RAMP_NAMES[i]}: {step}">
+									<div class="swatch" style="background: hsl({step})"></div>
+								</Tooltip>
+							{/each}
+						</div>
 
-				<Section
-					icon="accent"
-					title="Vurgu rengi"
-					expanded
-					onReset={() => resetSection("accent")}
-				>
-					<div class="swatches">
-						{#each ramp as step, i}
-							<Tooltip text="--fds-{RAMP_NAMES[i]}: {step}">
-								<div class="swatch" style="background: hsl({step})"></div>
-							</Tooltip>
-						{/each}
-					</div>
+						<!-- svelte-ignore a11y-label-has-associated-control -->
+						<label>
+							<TextBlock variant="caption">Ton (H) — {Math.round(accentH)}°</TextBlock>
+							<Slider
+								bind:value={accentH}
+								min={0}
+								max={360}
+								step={1}
+								suffix="°"
+								on:input={(e) => updateAccentFromSlider(extractSliderVal(e), accentS, accentL)}
+								on:change={(e) => updateAccentFromSlider(extractSliderVal(e), accentS, accentL)}
+							/>
+						</label>
+						<!-- svelte-ignore a11y-label-has-associated-control -->
+						<label>
+							<TextBlock variant="caption">Doygunluk (S) — {Math.round(accentS)}%</TextBlock>
+							<Slider
+								bind:value={accentS}
+								min={0}
+								max={100}
+								step={1}
+								suffix="%"
+								on:input={(e) => updateAccentFromSlider(accentH, extractSliderVal(e), accentL)}
+								on:change={(e) => updateAccentFromSlider(accentH, extractSliderVal(e), accentL)}
+							/>
+						</label>
+						<!-- svelte-ignore a11y-label-has-associated-control -->
+						<label>
+							<TextBlock variant="caption">Işıklılık (L) — {Math.round(accentL)}%</TextBlock>
+							<Slider
+								bind:value={accentL}
+								min={0}
+								max={100}
+								step={1}
+								suffix="%"
+								on:input={(e) => updateAccentFromSlider(accentH, accentS, extractSliderVal(e))}
+								on:change={(e) => updateAccentFromSlider(accentH, accentS, extractSliderVal(e))}
+							/>
+						</label>
 
-					<!-- svelte-ignore a11y-label-has-associated-control -->
-					<label>
-						<TextBlock variant="caption">Ton (H) — {Math.round(doc.accent[0])}°</TextBlock>
-						<Slider bind:value={doc.accent[0]} min={0} max={360} step={1} suffix="°" />
-					</label>
-					<!-- svelte-ignore a11y-label-has-associated-control -->
-					<label>
-						<TextBlock variant="caption">Doygunluk (S) — {Math.round(doc.accent[1])}%</TextBlock>
-						<Slider bind:value={doc.accent[1]} min={0} max={100} step={1} suffix="%" />
-					</label>
-					<!-- svelte-ignore a11y-label-has-associated-control -->
-					<label>
-						<TextBlock variant="caption">Işıklılık (L) — {Math.round(doc.accent[2])}%</TextBlock>
-						<Slider bind:value={doc.accent[2]} min={0} max={100} step={1} suffix="%" />
-					</label>
+						<div class="picker">
+							<TextBlock variant="caption">Palet, hex ve RGB</TextBlock>
+							<ColorPicker hex={accentHex} on:change={(e) => onAccentPick(e.detail)} />
+						</div>
 
-					<!--
-						Palet ve HSL kaydırıcıları AYNI state üzerinde: ikisi de
-						`doc.accent`'i yazıyor, aradaki dönüşüm tek yerde. Yani
-						paletten seçilen renk kaydırıcılarda, kaydırıcıyla seçilen
-						renk palette anında görünür.
-					-->
-					<div class="field">
-						<TextBlock variant="caption">Palet, hex ve RGB</TextBlock>
-						<ColorPicker hex={accentHex} on:change={(e) => onAccentPick(e.detail)} />
-					</div>
+						<div class="chips">
+							{#each PRESETS as preset}
+								<Button on:click={() => usePreset(preset.hsl)}>
+									<span
+										class="dot"
+										style="background: hsl({preset.hsl[0]}, {preset.hsl[1]}%, {preset.hsl[2]}%)"
+									></span>
+									{preset.name}
+								</Button>
+							{/each}
+						</div>
+					</Section>
 
-					<div class="chips">
-						{#each PRESETS as preset}
-							<Button on:click={() => usePreset(preset.hsl)}>
-								<span
-									class="dot"
-									style="background: hsl({preset.hsl[0]}, {preset.hsl[1]}%, {preset.hsl[2]}%)"
-								></span>
-								{preset.name}
-							</Button>
-						{/each}
-					</div>
-				</Section>
-
-				<Section icon="corner" title="Köşe yuvarlaklığı" onReset={() => resetSection("radius")}>
-					<ToggleSwitch bind:checked={radiusEnabled}>Yarıçapları özelleştir</ToggleSwitch>
-					<!-- svelte-ignore a11y-label-has-associated-control -->
-					<label>
-						<TextBlock variant="caption">Kontroller — {controlRadius}px</TextBlock>
-						<Slider
-							bind:value={controlRadius}
-							min={0}
-							max={16}
-							step={1}
-							disabled={!radiusEnabled}
-							suffix="px"
-						/>
-					</label>
-					<!-- svelte-ignore a11y-label-has-associated-control -->
-					<label>
-						<TextBlock variant="caption">Katmanlar (flyout, dialog) — {overlayRadius}px</TextBlock>
-						<Slider
-							bind:value={overlayRadius}
-							min={0}
-							max={24}
-							step={1}
-							disabled={!radiusEnabled}
-							suffix="px"
-						/>
-					</label>
-				</Section>
-
-				<Section
-					icon="hover"
-					title="Hover ve tıklama renkleri"
-					onReset={() => resetSection("hover")}
-				>
-					<ToggleSwitch bind:checked={hoverEnabled}>Etkileşim renklerini özelleştir</ToggleSwitch>
-					{#each HOVER_TOKENS as spec, i}
-						<ColorField
-							{spec}
-							bind:hex={hoverColors[i].hex}
-							bind:alpha={hoverColors[i].alpha}
-							disabled={!hoverEnabled}
-						/>
-					{/each}
-				</Section>
-
-				<Section icon="motion" title="Animasyon ve geçişler" onReset={() => resetSection("motion")}>
-					<ToggleSwitch bind:checked={motionEnabled}>Geçişleri özelleştir</ToggleSwitch>
-					<TextBlock variant="caption">
-						Sitenin kendi süre token'ları ölçeklenir; yeni bir animasyon sistemi eklenmez.
-					</TextBlock>
-					<!-- svelte-ignore a11y-label-has-associated-control -->
-					<label>
+					<Section icon="hover" title="Hover ve tıklama renkleri" onReset={() => resetSection("hover")}>
+						<ToggleSwitch bind:checked={hoverEnabled}>Etkileşim renklerini özelleştir</ToggleSwitch>
 						<TextBlock variant="caption">
-							Hız — {motionScale === 0 ? "anlık" : `${motionScale.toFixed(2)}×`}
+							Varsayılanlar sitenin kendi opaklık değerleridir. Siyah/beyaz geçişleri sitenin karanlık
+							veya aydınlık modda olmasına göre otomatik seçilir.
 						</TextBlock>
-						<Slider
-							bind:value={motionScale}
-							min={0}
-							max={3}
-							step={0.05}
+
+						{#each HOVER_TOKENS as spec, i}
+							<ColorField
+								{spec}
+								bind:hex={hoverColors[i].hex}
+								bind:alpha={hoverColors[i].alpha}
+								disabled={!hoverEnabled}
+							/>
+						{/each}
+					</Section>
+
+					<Section icon="button" title="Buton renkleri" onReset={() => resetSection("buttons")}>
+						<ToggleSwitch bind:checked={buttonsEnabled}>Buton renklerini özelleştir</ToggleSwitch>
+						{#each BUTTON_TOKENS as spec, i}
+							<ColorField
+								{spec}
+								bind:hex={buttonColors[i].hex}
+								bind:alpha={buttonColors[i].alpha}
+								disabled={!buttonsEnabled}
+							/>
+						{/each}
+						<div class="field">
+							<TextBlock variant="caption">Standart buton metni</TextBlock>
+							<TextBox bind:value={buttonTextHex} disabled={!buttonsEnabled} clearButton={false} />
+							<TextBlock variant="caption">
+								Bunun için sitede ayrı bir token yok; <code>.button</code> kuralı üzerinden ezilir.
+							</TextBlock>
+						</div>
+					</Section>
+					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="colors" />
+
+				{:else if editorCategory === "shape"}
+					<Section icon="corner" title="Köşe yuvarlaklığı" expanded onReset={() => resetSection("radius")}>
+						<ToggleSwitch bind:checked={radiusEnabled}>Yarıçapları özelleştir</ToggleSwitch>
+						<!-- svelte-ignore a11y-label-has-associated-control -->
+						<label>
+							<TextBlock variant="caption">Kontroller — {controlRadius}px</TextBlock>
+							<Slider
+								bind:value={controlRadius}
+								min={0}
+								max={16}
+								step={1}
+								disabled={!radiusEnabled}
+								suffix="px"
+							/>
+						</label>
+						<!-- svelte-ignore a11y-label-has-associated-control -->
+						<label>
+							<TextBlock variant="caption">Katmanlar (flyout, dialog) — {overlayRadius}px</TextBlock>
+							<Slider
+								bind:value={overlayRadius}
+								min={0}
+								max={24}
+								step={1}
+								disabled={!radiusEnabled}
+								suffix="px"
+							/>
+						</label>
+					</Section>
+
+					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="shape" />
+
+				{:else if editorCategory === "motion"}
+					<Section icon="motion" title="Animasyon ve geçişler" expanded onReset={() => resetSection("motion")}>
+						<ToggleSwitch bind:checked={motionEnabled}>Geçişleri özelleştir</ToggleSwitch>
+						<TextBlock variant="caption">
+							Sitenin kendi süre token'ları ölçeklenir; yeni bir animasyon sistemi eklenmez.
+						</TextBlock>
+						<!-- svelte-ignore a11y-label-has-associated-control -->
+						<label>
+							<TextBlock variant="caption">
+								Hız — {motionScale === 0 ? "anlık" : `${motionScale.toFixed(2)}×`}
+							</TextBlock>
+							<Slider
+								bind:value={motionScale}
+								min={0}
+								max={3}
+								step={0.05}
+								disabled={!motionEnabled}
+								suffix="×"
+							/>
+						</label>
+						<TextBlock variant="caption">Yumuşatma eğrisi</TextBlock>
+						<ComboBox
+							items={EASINGS.map((e) => ({ name: e.name, value: e.value }))}
+							bind:value={motionEasing}
 							disabled={!motionEnabled}
-							suffix="×"
 						/>
-					</label>
-					<TextBlock variant="caption">Yumuşatma eğrisi</TextBlock>
-					<ComboBox
-						items={EASINGS.map((e) => ({ name: e.name, value: e.value }))}
-						bind:value={motionEasing}
-						disabled={!motionEnabled}
-					/>
-					<TextBlock variant="caption">
-						{#each DURATION_TOKENS as d, i}{i > 0 ? " · " : ""}{d.label}: {Math.round(
-								d.base * motionScale
-							)}ms{/each}
-					</TextBlock>
-				</Section>
-
-				<Section icon="button" title="Buton renkleri" onReset={() => resetSection("buttons")}>
-					<ToggleSwitch bind:checked={buttonsEnabled}>
-						Buton renklerini vurgudan bağımsız ayarla
-					</ToggleSwitch>
-					{#each BUTTON_TOKENS as spec, i}
-						<ColorField
-							{spec}
-							bind:hex={buttonColors[i].hex}
-							bind:alpha={buttonColors[i].alpha}
-							disabled={!buttonsEnabled}
-						/>
-					{/each}
-					<div class="field">
-						<TextBlock variant="caption">Standart buton metni</TextBlock>
-						<TextBox bind:value={buttonTextHex} disabled={!buttonsEnabled} clearButton={false} />
 						<TextBlock variant="caption">
-							Bunun için sitede ayrı bir token yok; <code>.button</code> kuralı üzerinden ezilir.
+							{#each DURATION_TOKENS as d, i}{i > 0 ? " · " : ""}{d.label}: {Math.round(
+									d.base * motionScale
+								)}ms{/each}
 						</TextBlock>
-					</div>
-				</Section>
+					</Section>
 
-				<!-- Gelişmiş özelleştirme bölümleri:
-				     logo, arkaplan, kartlar, metin/odak, yazı tipi, maskot, oynatıcı vb. -->
-				<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} />
+					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="motion" />
 
-				<Section icon="code" title="Ham CSS" onReset={() => resetSection("raw")}>
-					<StatusBar
-						severity="caution"
-						title="Dikkat"
-						message="Buraya yazdığınız CSS resmi tema token'ları dışına çıkar; site güncellemelerinde bozulabilir."
-						closable={false}
-					/>
-					<TextArea bind:value={doc.rawCss} placeholder="body &lbrace; letter-spacing: .2px; &rbrace;" />
-				</Section>
+				{:else if editorCategory === "media"}
+					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="media" />
+
+				{:else if editorCategory === "components"}
+					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="components" />
+
+				{:else if editorCategory === "advanced"}
+					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="advanced" />
+
+					<Section icon="code" title="Ham CSS" onReset={() => resetSection("raw")}>
+						<StatusBar
+							severity="caution"
+							title="Dikkat"
+							message="Buraya yazdığınız CSS resmi tema token'ları dışına çıkar; site güncellemelerinde bozulabilir."
+							closable={false}
+						/>
+						<TextArea bind:value={doc.rawCss} placeholder="body &lbrace; letter-spacing: .2px; &rbrace;" />
+					</Section>
+				{/if}
 			</div>
 		{:else}
 			<div class="sections">
@@ -1597,20 +1860,29 @@
 			floating bir kontrol. Sağ üst köşede, segmented control.
 		-->
 		<div class="viewport-bar">
-			<Tooltip text="Önizleme genişliği — sitenin kendi medya sorguları gerçekten tetiklenir">
-				<div class="viewport-pill">
-					<SegmentedControl bind:value={viewport}>
-						{#each VIEWPORTS as vp}
-							<SegmentedControlButton value={vp.id} on:click={() => (viewport = vp.id)}>
-								<span class="vp">
-									<Icon name={vp.icon} size={14} />
-									<span class="vp-name">{vp.name}</span>
-								</span>
-							</SegmentedControlButton>
-						{/each}
-					</SegmentedControl>
-				</div>
-			</Tooltip>
+			<div class="viewport-pill">
+				<SegmentedControl bind:value={doc.mode}>
+					<SegmentedControlButton value="system" on:click={() => setMode("system")}>
+						Sistem
+					</SegmentedControlButton>
+					<SegmentedControlButton value="light" on:click={() => setMode("light")}>
+						Açık
+					</SegmentedControlButton>
+					<SegmentedControlButton value="dark" on:click={() => setMode("dark")}>
+						Koyu
+					</SegmentedControlButton>
+				</SegmentedControl>
+			</div>
+
+			<div class="viewport-pill">
+				<SegmentedControl bind:value={viewport}>
+					{#each VIEWPORTS as vp}
+						<SegmentedControlButton value={vp.id} on:click={() => (viewport = vp.id)}>
+							{vp.name}
+						</SegmentedControlButton>
+					{/each}
+				</SegmentedControl>
+			</div>
 		</div>
 
 		<!-- Önizleme webview'i bu boşluğun üstüne native olarak oturur. -->
@@ -1788,8 +2060,9 @@
 
 	.viewport-bar {
 		display: flex;
-		justify-content: flex-end;
+		justify-content: space-between;
 		align-items: center;
+		gap: 8px;
 		padding: 8px 12px;
 		/* Şerit sürüklenebilir olmasın diye title bar'dan bağımsız. */
 		box-sizing: border-box;
@@ -1803,19 +2076,6 @@
 		border: 1px solid var(--fds-card-stroke-default);
 		box-shadow: var(--fds-card-shadow);
 		padding: 2px;
-	}
-
-	.vp {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	/* Dar pencerede yalnızca ikonlar kalsın; hap taşmasın. */
-	@media (max-width: 1100px) {
-		.vp-name {
-			display: none;
-		}
 	}
 
 	.preview-slot {
@@ -1834,6 +2094,23 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
+	}
+
+	.category-switch {
+		padding: 0 1rem 0.5rem 1rem;
+	}
+
+	.category-switch :global(.segmented-control) {
+		width: 100%;
+		display: flex;
+	}
+
+	.category-switch :global(.segmented-control-item),
+	.category-switch :global(.segmented-control-button),
+	.category-switch :global(button) {
+		flex: 1 1 0%;
+		text-align: center;
+		justify-content: center;
 	}
 
 	.row {

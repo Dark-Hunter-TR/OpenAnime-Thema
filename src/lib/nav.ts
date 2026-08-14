@@ -10,4 +10,4 @@
  * çiziliyor; route değişimi onun ömrünü ve konumunu yönetmeyi gereksiz yere
  * karmaşıklaştırırdı. Görünüm değişimi bu yüzden basit bir durum makinesi.
  */
-export type NavId = "home" | "editor" | "settings";
+export type NavId = "home" | "editor" | "settings" | "about";

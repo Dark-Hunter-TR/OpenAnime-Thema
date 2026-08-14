@@ -259,72 +259,97 @@
 		padding: 24px;
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
+		gap: 8px;
 	}
 
 	#content h4 {
 		margin: 0;
 		font-size: 18px;
 		font-weight: 600;
+		color: var(--fds-text-primary, #ffffff);
 	}
 
 	#content span {
 		font-size: 13px;
 		line-height: 1.5;
-		color: var(--fds-text-secondary, rgba(255, 255, 255, 0.7));
+		color: var(--fds-text-tertiary, rgba(255, 255, 255, 0.54));
 	}
 
 	hr.horizontal {
 		border: none;
+		border-top: 1px solid var(--fds-divider-stroke-default, rgba(255, 255, 255, 0.08));
 		height: 1px;
-		background-color: var(--fds-divider-stroke-default, rgba(255, 255, 255, 0.08));
 		margin: 1rem 0;
 	}
 
 	#buttons {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.5rem;
-		justify-content: center;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		width: 100%;
 	}
 
 	#buttons a.button.style-hyperlink {
-		color: var(--fds-accent-text-primary, #60a5fa);
-		text-decoration: none;
-		font-size: 13px;
-		font-weight: 500;
-		padding: 6px 4px;
+		box-sizing: border-box;
+		height: 32px;
+		padding: 0 11px;
+		font-size: 14px;
+		font-weight: 400;
+		line-height: 20px;
+		color: var(--fds-accent-text-primary, #60cdff);
+		background-color: var(--fds-subtle-fill-transparent, transparent);
+		border: 1px solid transparent;
 		border-radius: var(--fds-control-corner-radius, 4px);
+		text-decoration: none;
 		text-align: center;
-		transition: background-color 0.15s ease, opacity 0.15s ease;
-		display: flex;
+		transition: background-color var(--fds-control-fast-duration, 0.15s) ease,
+			color var(--fds-control-fast-duration, 0.15s) ease;
+		display: inline-flex;
 		align-items: center;
 		justify-content: center;
+		white-space: nowrap;
+		cursor: pointer;
+		user-select: none;
 	}
 
 	#buttons a.button.style-hyperlink:hover {
 		background-color: var(--fds-subtle-fill-secondary, rgba(255, 255, 255, 0.06));
-		text-decoration: underline;
+		color: var(--fds-accent-text-secondary, var(--fds-accent-text-primary, #60cdff));
+		text-decoration: none;
+	}
+
+	#buttons a.button.style-hyperlink:active {
+		background-color: var(--fds-subtle-fill-tertiary, rgba(255, 255, 255, 0.04));
+		color: var(--fds-accent-text-tertiary, var(--fds-accent-text-primary, #60cdff));
 	}
 
 	#close-button {
 		position: relative;
-		width: 40px;
-		height: 40px;
-		border: 1px solid var(--fds-card-stroke-default, rgba(255, 255, 255, 0.08));
-		border-radius: var(--fds-overlay-corner-radius, 8px);
-		background: var(--fds-solid-background-base, #202020);
-		color: var(--fds-text-primary, #ffffff);
-		cursor: pointer;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
+		width: 48px;
+		height: 48px;
+		margin-left: 8px;
+		padding: 0;
+		border: 1px solid var(--fds-surface-stroke-default, rgba(255, 255, 255, 0.08));
+		border-radius: var(--fds-overlay-corner-radius, 8px);
+		background-color: var(--fds-control-on-image-fill-default, rgba(0, 0, 0, 0.25));
+		background-clip: padding-box;
+		color: var(--fds-text-primary, #ffffff);
+		cursor: pointer;
 		flex-shrink: 0;
-		box-shadow: var(--fds-dialog-shadow, 0 16px 32px rgba(0, 0, 0, 0.37));
-		transition: background-color 0.15s ease, border-color 0.15s ease;
+		transition: background-color var(--fds-control-fast-duration, 0.15s) ease,
+			color var(--fds-control-fast-duration, 0.15s) ease;
 	}
 
 	#close-button:hover {
-		background: var(--fds-subtle-fill-secondary, rgba(255, 255, 255, 0.12));
+		background-color: var(--fds-control-on-image-fill-secondary, rgba(255, 255, 255, 0.08));
+	}
+
+	#close-button:active {
+		background-color: var(--fds-control-on-image-fill-tertiary, rgba(255, 255, 255, 0.04));
 	}
 </style>

@@ -17,6 +17,8 @@
 	export let mode = "dark";
 	/** O anki accent rampası; token varsayılanlarını çözmek için. */
 	export let ramp: string[] = [];
+	/** Kategori filtresi — "colors" | "shape" | "motion" | "media" | "components" | "advanced" | "all" */
+	export let category: "colors" | "shape" | "motion" | "media" | "components" | "advanced" | "all" = "all";
 
 	let busy = "";
 
@@ -59,6 +61,7 @@
 	$: sizedMascots = MASCOT_SLOTS.filter((s) => s.size !== null);
 </script>
 
+{#if category === "media" || category === "all"}
 <Section icon="background" title="Arkaplan görseli" onReset={reset("bg")}>
 	<TextBlock variant="caption">
 		Görsel sabit bir katmana basılır ve üstteki yüzeyler şeffaflaştırılır,
@@ -69,6 +72,7 @@
 		<Button disabled={!adv.bg.on} on:click={() => chooseInto((u) => (adv.bg.dataUri = u), "bg")}>
 			<Icon name="open" size={14} /><span class="gap">Görsel seç…</span>
 		</Button>
+		<TextBox bind:value={adv.bg.dataUri} disabled={!adv.bg.on} placeholder="veya görsel URL'si girin (https://...)" clearButton={false} />
 		{#if adv.bg.dataUri}
 			<Tooltip text="Kaldır">
 				<IconButton on:click={() => (adv.bg.dataUri = "")}>
@@ -164,7 +168,9 @@
 		Kart görselinin alt kısmındaki silikleşme maskesinin başladığı nokta.
 	</TextBlock>
 </Section>
+{/if}
 
+{#if category === "advanced" || category === "all"}
 <Section icon="banner" title="Banner ve kayan kartlar" onReset={reset("banner")}>
 	<TextBlock variant="caption">
 		Ana sayfadaki kayan kartların çerçeve rengini ve ilerleme çubuğunun
@@ -378,6 +384,7 @@
 		>
 			<Icon name="open" size={14} /><span class="gap">Görsel seç…</span>
 		</Button>
+		<TextBox bind:value={adv.logo.dataUri} disabled={!adv.logo.imageOn} placeholder="veya görsel URL'si girin (https://...)" clearButton={false} />
 		{#if adv.logo.dataUri}
 			<img class="thumb" src={adv.logo.dataUri} alt="Logo önizlemesi" />
 			<Tooltip text="Kaldır">
@@ -702,6 +709,7 @@
 		Siyah kontur (sitenin varsayılanı)
 	</ToggleSwitch>
 </Section>
+{/if}
 
 <style>
 	.row {

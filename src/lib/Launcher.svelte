@@ -102,8 +102,18 @@
 	let candidates: GithubFile[] = [];
 	let chosenPath = "";
 	let importSource = "";
+	function cleanPathDisplay(p: string): string {
+		return p ? (p.split("/").pop() ?? p) : "";
+	}
 
 	$: chosen = candidates.find((file) => file.path === chosenPath) ?? candidates[0];
+	$: comboItems = candidates.map((file) => ({
+		name: cleanPathDisplay(file.path),
+		value: file.path
+	}));
+	$: if (chosen) {
+		importName = suggestProjectName(chosen);
+	}
 
 	function resetImport() {
 		importUrl = "";
@@ -129,8 +139,7 @@
 			candidates = result.files;
 			importSource = result.source;
 			chosenPath = result.files[0]?.path ?? "";
-			// Ad henüz elle değiştirilmediyse dosya adından öner.
-			if (!importName) importName = suggestProjectName(result.files[0]);
+			if (result.files[0]) importName = suggestProjectName(result.files[0]);
 		} catch (e) {
 			candidates = [];
 			importError = e instanceof ImportError ? e.message : String(e);
@@ -189,6 +198,15 @@
 			<Button on:click={onOpenFile}>
 				<Icon name="open" size={16} /><span class="gap">CSS dosyası aç…</span>
 			</Button>
+			{#if loggedIn}
+				<Button on:click={onOpenAccount}>
+					<Icon name="person" size={16} /><span class="gap">Hesap</span>
+				</Button>
+			{:else}
+				<Button on:click={onPreviewLogin}>
+					<Icon name="person" size={16} /><span class="gap">Giriş yap</span>
+				</Button>
+			{/if}
 		</div>
 	</section>
 
@@ -294,20 +312,13 @@
 		</label>
 
 		{#if candidates.length > 1}
-			<!-- svelte-ignore a11y-label-has-associated-control -->
-			<label>
-				<TextBlock variant="caption">
-					Depoda {candidates.length} CSS dosyası var — hangisi tema?
-				</TextBlock>
-				<ComboBox
-					items={candidates.map((file) => ({ name: file.path, value: file.path }))}
-					bind:value={chosenPath}
-					disabled={importBusy}
-				/>
-			</label>
+			<TextBlock variant="caption">
+				Depoda {candidates.length} CSS dosyası var — hangisi tema?
+			</TextBlock>
+			<ComboBox items={comboItems} bind:value={chosenPath} disabled={importBusy} />
 		{:else if candidates.length === 1}
 			<TextBlock variant="caption">
-				<Icon name="file" size={12} /><span class="gap">{candidates[0].path}</span>
+				<Icon name="file" size={12} /><span class="gap">{cleanPathDisplay(candidates[0].path)}</span>
 			</TextBlock>
 		{/if}
 
@@ -556,6 +567,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
+	}
+
+	/* ContentDialog içinde ComboBox dropdown'u düzgün görünsün diye
+	   z-index ve overflow düzeltmeleri. */
+	.dialog :global(.combo-box-dropdown) {
+		z-index: 200;
 	}
 
 	.busy {

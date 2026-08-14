@@ -40,6 +40,10 @@ import system from "@fluentui/svg-icons/icons/warning_24_regular.svg?raw";
 import palette from "@fluentui/svg-icons/icons/color_fill_24_regular.svg?raw";
 import size from "@fluentui/svg-icons/icons/resize_24_regular.svg?raw";
 
+import weatherSunny from "@fluentui/svg-icons/icons/weather_sunny_24_regular.svg?raw";
+import weatherMoon from "@fluentui/svg-icons/icons/weather_moon_24_regular.svg?raw";
+import settingsSystem from "@fluentui/svg-icons/icons/system_24_regular.svg?raw";
+
 // Sıfırlama: bölüm başlıklarındaki tekil sıfırlama ile "tümünü sıfırla"
 // bilerek FARKLI glifler — biri geri alır, diğeri her şeyi siler.
 import resetAll from "@fluentui/svg-icons/icons/arrow_counterclockwise_24_regular.svg?raw";
@@ -137,6 +141,9 @@ export const ICONS = {
 	system,
 	palette,
 	size,
+	weatherSunny,
+	weatherMoon,
+	settingsSystem,
 	resetAll,
 	mobile,
 	tablet,
