@@ -130,7 +130,10 @@ pub fn named_color_to_hsl(name: &str) -> Option<Hsl> {
 }
 
 pub fn parse_color_to_hsl(value: &str) -> Option<Hsl> {
-    let v = value.trim();
+    let mut v = value.trim();
+    if v.ends_with("!important") {
+        v = v.trim_end_matches("!important").trim();
+    }
     if v.is_empty() {
         return None;
     }

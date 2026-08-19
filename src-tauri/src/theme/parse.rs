@@ -43,7 +43,10 @@ fn find_decl<'a>(block: &'a str, name: &str) -> Option<&'a str> {
 }
 
 pub fn parse_px(value: &str) -> Option<f64> {
-    let v = value.trim();
+    let mut v = value.trim();
+    if v.ends_with("!important") {
+        v = v.trim_end_matches("!important").trim();
+    }
     if v.ends_with("rem") {
         let num: f64 = v.trim_end_matches("rem").trim().parse().ok()?;
         Some((num * 16.0 * 10.0).round() / 10.0)
@@ -102,7 +105,8 @@ fn split_rules(block: &str) -> Vec<(String, String)> {
 }
 
 fn parse_decls(body: &str) -> Vec<(String, String)> {
-    body.split(';')
+    let cleaned = strip_comments(body);
+    cleaned.split(';')
         .filter_map(|decl| {
             let (key, value) = decl.split_once(':')?;
             let (key, value) = (key.trim(), value.trim());
@@ -469,6 +473,7 @@ fn extract_tokens_from_vars(all_vars: &BTreeMap<String, String>) -> BTreeMap<Str
     }
 
     let bg_names = [
+        "--bg-page", "--mn-bg0", "--bg-layer", "--bg-card",
         "--bg-primary", "--bg-main", "--main-bg", "--background-base", "--bg-color", "--background", "--background-color", "--surface"
     ];
     for name in bg_names {
