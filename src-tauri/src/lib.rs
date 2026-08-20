@@ -422,6 +422,45 @@ pub fn run() {
             projects::rename_project
         ])
         .setup(|app| {
+            // Pencere `tauri.conf.json`'da sabit 1400x900 açılıyor — bu, o
+            // boyuttan küçük ekranlarda (ör. 1366x768 dizüstü) pencerenin
+            // taşmasına ya da görev çubuğunun altına inmesine yol açıyordu.
+            //
+            // `preview::create`'DEN ÖNCE çalışmalı: o fonksiyon önizleme
+            // webview'inin ilk boyutunu ana pencerenin O ANKİ `inner_size`'ına
+            // göre hesaplıyor (bkz. preview.rs -> FALLBACK_PANEL_WIDTH). Sırayı
+            // tersine çevirirsek önizleme bir kare eski (küçültülmeden önceki)
+            // boyutla açılıp kendini frontend'in ResizeObserver'ı devreye
+            // girene kadar yanlış yerde gösterirdi.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(Some(monitor)) = window.primary_monitor() {
+                    let scale = monitor.scale_factor();
+                    let work_area = monitor.work_area();
+                    // `work_area` fiziksel piksel (görev çubuğu hariç); pencere
+                    // boyutları mantıksal piksel — DPI ölçeğine bölerek eşitliyoruz.
+                    let work_w = work_area.size.width as f64 / scale;
+                    let work_h = work_area.size.height as f64 / scale;
+
+                    const IDEAL_W: f64 = 1400.0;
+                    const IDEAL_H: f64 = 900.0;
+                    // Ekranı uç noktalarına kadar doldurmak yerine küçük bir
+                    // pay bırakıyoruz — tam ekran boyutunda bir pencere
+                    // "sığdırılmış" değil "taşmanın eşiğinde" hissettirir.
+                    const MARGIN: f64 = 0.92;
+
+                    let target_w = IDEAL_W.min(work_w * MARGIN);
+                    let target_h = IDEAL_H.min(work_h * MARGIN);
+
+                    // Alt sınır (900x600) elle uygulanmıyor: `tauri.conf.json`
+                    // -> `minWidth`/`minHeight` zaten kalıcı bir kısıt olarak
+                    // devrede, `set_size` onun altına inemez.
+                    let _ = window.set_size(tauri::LogicalSize::new(target_w, target_h));
+                }
+                // Konfigürasyonda `"center": true` yok; her açılışta ortalıyoruz
+                // ki küçültülmüş pencere de ekranın bir köşesinde kalmasın.
+                let _ = window.center();
+            }
+
             let doc = {
                 let state: State<ThemeState> = app.state();
                 let guard = state.0.lock().expect("tema kilidi");

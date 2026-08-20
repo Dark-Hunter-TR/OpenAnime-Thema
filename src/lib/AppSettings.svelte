@@ -36,7 +36,6 @@
 	export let settings: AppSettings;
 	export let projectCount = 0;
 	export let projectsPath = "";
-	export let appVersion = "";
 	export let onOpenProjectsFolder: () => void;
 	export let onPreviewLogin: () => void;
 	/** Önizlemede openani.me oturumu açık mı (Rust çerez kavanozundan okuyor). */
@@ -224,23 +223,6 @@
 					</span>
 					<span class="item-action">
 						<Button on:click={onOpenProjectsFolder} disabled={!projectsPath}>Klasörü aç</Button>
-					</span>
-				</div>
-			</Expander>
-		</section>
-
-		<!-- --- Hakkında ----------------------------------------------------- -->
-		<section class="expand-section">
-			<TextBlock variant="bodyStrong">Hakkında</TextBlock>
-
-			<Expander expandable={false}>
-				<Icon slot="icon" name="navAbout" size={20} />
-				<div class="item">
-					<span class="item-header">
-						<TextBlock variant="body">OpenAnime Tema Editörü</TextBlock>
-						<TextBlock variant="caption">
-							Sürüm {appVersion || "v0.1.0"}
-						</TextBlock>
 					</span>
 				</div>
 			</Expander>
