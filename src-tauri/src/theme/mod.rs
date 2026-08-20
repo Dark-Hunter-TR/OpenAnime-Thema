@@ -7,6 +7,5 @@ pub mod parse;
 mod tests;
 
 pub use color::*;
-pub use emit::*;
 pub use models::*;
 pub use parse::*;

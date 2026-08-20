@@ -18,16 +18,6 @@ pub enum ThemeMode {
     Dark,
 }
 
-impl ThemeMode {
-    pub fn as_site_value(self) -> u8 {
-        match self {
-            ThemeMode::System => 0,
-            ThemeMode::Light => 1,
-            ThemeMode::Dark => 2,
-        }
-    }
-}
-
 impl Default for ThemeMode {
     fn default() -> Self {
         ThemeMode::Dark
