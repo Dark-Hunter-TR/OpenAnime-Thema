@@ -394,11 +394,23 @@ fn import_css_text(
     Ok(doc)
 }
 
+/// Kurulan güncellemeyi devreye almak için uygulamayı yeniden başlatır.
+///
+/// `tauri::AppHandle::restart` çekirdek Tauri'nin bir parçası (bir eklenti
+/// değil) ama frontend'e IPC ile açık değil — bu yüzden tek satırlık bu
+/// komut var. Ayrı bir `tauri-plugin-process` bağımlılığı eklemeye değmezdi:
+/// tek ihtiyacımız bu.
+#[tauri::command]
+fn restart_app(app: AppHandle) {
+    app.restart();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(ThemeState::default())
         .invoke_handler(tauri::generate_handler![
             apply_theme,
@@ -414,6 +426,7 @@ pub fn run() {
             fetch_account_info,
             fetch_account_follows,
             import_css_text,
+            restart_app,
             projects::projects_dir_path,
             projects::list_projects,
             projects::load_project,

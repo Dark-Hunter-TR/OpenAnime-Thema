@@ -85,6 +85,12 @@ Uygulama tahmine değil, **doğrulanmış bulgulara** dayanır: her `--fds-*` to
 
 Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranışına dair tercihler: açılış düzenleme modu (görsel/kod), varsayılan önizleme genişliği ve sayfası, ana ekrana dönerken otomatik kaydetme.
 
+### <img src="https://api.iconify.design/fluent/arrow-sync-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Uygulama İçi Güncelleyici
+
+- Açılıştan birkaç saniye sonra arka planda sessizce yeni sürüm kontrolü yapılır; bulunursa aynı diyalog şablonuyla (bkz. "Hakkında" penceresi) sürüm notları, indirme ilerlemesi ve "İndir ve Kur" / "Daha Sonra Hatırlat" seçenekleri gösterilir.
+- Güncellemeler [`tauri-plugin-updater`](https://v2.tauri.app/plugin/updater/) ile **imzalı** olarak dağıtılır ve indirilmeden önce doğrulanır; kurulum bitince uygulama kendini yeniden başlatır.
+- Otomatik kontrol Ayarlar'dan kapatılabilir; aynı sayfadan elle de kontrol edilebilir.
+
 ---
 
 ## <img src="https://api.iconify.design/fluent/image-multiple-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Diğer Ekranlar
@@ -154,6 +160,21 @@ bun run tauri build   # veya: npm run tauri build
 
 ---
 
+## <img src="https://api.iconify.design/fluent/cloud-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Yayın Süreci *(bakım yapanlar için)*
+
+`.github/workflows/release.yml`, bir `vX.Y.Z` tag'i push edildiğinde (ya da Actions arayüzünden elle) Windows derlemesini alıp GitHub Releases'e **imzalı** olarak yayınlar. `.github/workflows/test-build.yml` ise bir release oluşturmadan yalnızca derlemenin geçtiğini doğrulamak için elle tetiklenir.
+
+İmzalama için depo secret'larına ihtiyaç var (**Settings → Secrets and variables → Actions**):
+
+| Secret | Açıklama |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | `tauri signer generate` ile üretilen private key dosyasının içeriği |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | O anahtarın parolası |
+
+Uygulama içindeki güncelleyici, sabit bir kanal manifesti değil doğrudan `.../releases/latest/download/latest.json` uç noktasını okur — yani `release.yml` tamamlandığında (taslak → canlı) bir sonraki açılışta otomatik olarak görünür.
+
+---
+
 ## <img src="https://api.iconify.design/fluent/building-multiple-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Mimari Genel Bakış
 
 | Katman | Konum | Sorumluluk |
@@ -162,6 +183,7 @@ bun run tauri build   # veya: npm run tauri build
 | **Önizleme Köprüsü** | `src-tauri/src/preview_init.js` | Önizleme webview'ine enjekte edilen betik — tema uygulama ve openani.me'nin kendi oturumu üzerinden hesap verisi çekme |
 | **SvelteKit Arayüzü** | `src/` | Editör, ayarlar, ana ekran ve tüm görsel kontroller |
 | **Otomatik Katalog** | `scripts/build-catalog.mjs` | `src/lib/catalog.generated.ts`'i üretir — elle düzenlenmez |
+| **CI/CD** | `.github/workflows/` | Windows için imzalı yayın (`release.yml`) ve derleme doğrulama (`test-build.yml`) |
 
 ---
 

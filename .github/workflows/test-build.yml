@@ -1,0 +1,97 @@
+name: '🧪 Test Build'
+
+# Elle tetiklenir — bir tag/release oluşturmadan derlemenin geçtiğini
+# doğrulamak için. Yalnızca Windows: bkz. README.md -> "Kurulum".
+on:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: 'Build modu'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+      upload_artifacts:
+        description: 'Artifact olarak yükle'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Rust bağımlılıkları
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-
+
+      - name: Cache Tauri bundler (NSIS, WiX vb.)
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: windows-tauri-bundler
+          restore-keys: |
+            windows-tauri-bundler-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: windows-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            windows-bun-
+
+      - name: Bağımlılıkları yükle
+        run: bun install
+
+      # Test build BİLEREK imzasız: bu iş akışı yalnızca "derleme geçiyor mu"
+      # sorusuna cevap veriyor, bir release yayınlamıyor. İmzalama
+      # secret'ları yalnızca release.yml'de kullanılıyor.
+      - name: Derle
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseDraft: false
+          prerelease: false
+          args: ${{ github.event.inputs.build_mode == 'debug' && '--debug' || '' }} --verbose
+
+      - name: Artifact'leri yükle
+        if: github.event.inputs.upload_artifacts == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64-${{ github.event.inputs.build_mode }}
+          path: src-tauri/target/${{ github.event.inputs.build_mode == 'debug' && 'debug' || 'release' }}/bundle
+          if-no-files-found: warn
+          retention-days: 7

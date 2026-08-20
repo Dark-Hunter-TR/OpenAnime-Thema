@@ -1,0 +1,206 @@
+name: '🚀 Publish'
+
+# Tag push edildiğinde otomatik build + yayın, ya da GitHub Actions
+# arayüzünden elle tetiklenir. Yalnızca Windows: bkz. README.md ->
+# "Kurulum" — proje şu an için başka platformda test edilmedi.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Sürüm (ör: 0.2.0)'
+        required: true
+        type: string
+
+concurrency:
+  # Aynı tag için tek yayın; devam eden bir yayını yarıda kesme.
+  group: publish-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  # ────────────────────────────────────────────────────
+  # 1) Tag'i belirle
+  # ────────────────────────────────────────────────────
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Sürümü tag'den hesapla
+        id: meta
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -z "$INPUT_VERSION" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v${INPUT_VERSION}"
+          fi
+          VERSION="${TAG#v}"
+
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Sürüm SemVer değil: $VERSION (beklenen: 1.2.3)"
+            exit 1
+          fi
+
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### 🚀 Yayın Bilgisi"
+            echo "- **Tag:** \`$TAG\`"
+            echo "- **Sürüm:** \`$VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ────────────────────────────────────────────────────
+  # 2) Derle + TASLAK release'e yayınla
+  # ────────────────────────────────────────────────────
+  build:
+    needs: prepare
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      - name: Cache Tauri bundler (NSIS, WiX vb.)
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: windows-tauri-bundler-${{ hashFiles('src-tauri/tauri.conf.json') }}
+          restore-keys: |
+            windows-tauri-bundler-
+
+      - name: Cache Rust bağımlılıkları
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: windows-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            windows-bun-
+
+      # Sürüm alanlarını tag ile eşitle (repodaki değer ne olursa olsun tag kazanır)
+      - name: Sürüm alanlarını tag ile eşitle
+        shell: bash
+        env:
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const v = process.env.APP_VERSION;
+
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.version = v;
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+
+            const tauri = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+            tauri.version = v;
+            fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(tauri, null, 2) + "\n");
+
+            let cargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+            cargo = cargo.replace(/^version = ".*"/m, `version = "${v}"`);
+            fs.writeFileSync("src-tauri/Cargo.toml", cargo);
+
+            console.log("Sürüm alanları güncellendi:", v);
+          '
+
+      - name: Bağımlılıkları yükle
+        run: bun install
+
+      # `createUpdaterArtifacts: true` zaten tauri.conf.json'da (bkz. bundle
+      # bölümü) — tauri-action imzalama secret'ları verildiğinde latest.json +
+      # .sig dosyalarını kendisi üretip release'e ekliyor.
+      - name: Derle & Yayınla (imzalı)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: ${{ needs.prepare.outputs.tag }}
+          releaseDraft: true
+          prerelease: false
+          args: --verbose
+
+  # ────────────────────────────────────────────────────
+  # 3) latest.json'un gerçekten üretildiğini doğrula
+  # ────────────────────────────────────────────────────
+  verify-manifest:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: latest.json release'de var mı?
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ needs.prepare.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "latest.json" \
+            --output latest.json \
+            --clobber || true
+          if [ ! -s latest.json ]; then
+            echo "::error::latest.json release'de yok ya da boş — imzalama secret'ları eksik/yanlış olabilir. Yayın durduruldu."
+            exit 1
+          fi
+          echo "latest.json bulundu:"
+          cat latest.json
+
+  # ────────────────────────────────────────────────────
+  # 4) Taslak release'i canlıya al
+  # ────────────────────────────────────────────────────
+  publish-release:
+    needs: [prepare, build, verify-manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Taslağı yayınla
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ needs.prepare.outputs.tag }}" \
+            --draft=false \
+            --repo "${{ github.repository }}"

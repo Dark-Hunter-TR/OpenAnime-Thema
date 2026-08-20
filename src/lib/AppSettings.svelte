@@ -36,10 +36,17 @@
 	export let settings: AppSettings;
 	export let projectCount = 0;
 	export let projectsPath = "";
+	export let appVersion = "";
 	export let onOpenProjectsFolder: () => void;
 	export let onPreviewLogin: () => void;
 	/** Önizlemede openani.me oturumu açık mı (Rust çerez kavanozundan okuyor). */
 	export let loggedIn = false;
+	export let onCheckForUpdates: () => void;
+	/** Kontrol mantığı `+page.svelte`'de yaşıyor (Ayarlar'daki düğme ile
+	 * açılıştaki otomatik kontrol AYNI kodu paylaşıyor) — burası yalnızca
+	 * sonucu gösteriyor. */
+	export let updateCheckStatus: "idle" | "checking" | "up-to-date" | "error" = "idle";
+	export let updateCheckError = "";
 
 	const dispatch = createEventDispatcher<{ change: AppSettings }>();
 
@@ -223,6 +230,51 @@
 					</span>
 					<span class="item-action">
 						<Button on:click={onOpenProjectsFolder} disabled={!projectsPath}>Klasörü aç</Button>
+					</span>
+				</div>
+			</Expander>
+		</section>
+
+		<!-- --- Güncellemeler -------------------------------------------------- -->
+		<section class="expand-section">
+			<TextBlock variant="bodyStrong">Güncellemeler</TextBlock>
+
+			<Expander expandable={false}>
+				<Icon slot="icon" name="update" size={20} />
+				<div class="item">
+					<span class="item-header">
+						<TextBlock variant="body">Açılışta otomatik kontrol et</TextBlock>
+						<TextBlock variant="caption">
+							Yeni bir sürüm varsa açılıştan birkaç saniye sonra sessizce sorulur.
+						</TextBlock>
+					</span>
+					<span class="item-action">
+						<ToggleSwitch bind:checked={settings.updateAutoCheck} />
+					</span>
+				</div>
+			</Expander>
+
+			<Expander expandable={false}>
+				<Icon slot="icon" name="navAbout" size={20} />
+				<div class="item">
+					<span class="item-header">
+						<TextBlock variant="body">OpenAnime Tema Editörü</TextBlock>
+						<TextBlock variant="caption">
+							{#if updateCheckStatus === "checking"}
+								Kontrol ediliyor…
+							{:else if updateCheckStatus === "up-to-date"}
+								{appVersion || "Sürüm bilinmiyor"} — güncel
+							{:else if updateCheckStatus === "error"}
+								Kontrol edilemedi: {updateCheckError}
+							{:else}
+								{appVersion || "Sürüm bilinmiyor"}
+							{/if}
+						</TextBlock>
+					</span>
+					<span class="item-action">
+						<Button on:click={onCheckForUpdates} disabled={updateCheckStatus === "checking"}>
+							<Icon name="refresh" size={16} /><span class="gap">Şimdi kontrol et</span>
+						</Button>
 					</span>
 				</div>
 			</Expander>

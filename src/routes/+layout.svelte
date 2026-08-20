@@ -63,6 +63,68 @@
 	}
 
 	/* ==================================================================
+	   Uygulamanın KENDİ arayüzündeki kaydırma çubukları (Ayarlar sayfası,
+	   panel kaydırma alanları vb.)
+	   ==================================================================
+	   openani.me'nin OverlayScrollbars temasıyla KARIŞTIRILMASIN — o site
+	   içeriği için (bkz. `advanced.ts` -> `SCROLLBAR_SELECTOR`, `--os-*`).
+	   Ama TASARIMI buradan birebir alındı — sitenin canlı CSS'inde
+	   (`.os-scrollbar` kuralları) doğrulanan gerçek değerler:
+	     .os-scrollbar-vertical { width: .75rem !important }         → 12px şerit
+	     --os-track-bg: none                                          → boşta ray görünmez
+	     --os-track-bg-hover: var(--fds-layer-background-default)     → hover'da belirir
+	     .os-scrollbar-handle { width: 2px; margin-right: 4px }       → boşta 2px, sağa yaslı
+	     .os-scrollbar-interaction .os-scrollbar-handle { width: 5px } → hover'da 5px
+	   WebView2'nin native `::-webkit-scrollbar`'ında OverlayScrollbars'ın
+	   ayrı "interaction" durumu yok — en yakın karşılığı `:hover`. Sağa
+	   yaslı 2px tutamağı native scrollbar'da border-trick ile taklit
+	   ediyoruz: 12px şeritte border-left 6px (boşta) / 3px (hover),
+	   border-right sabit 4px — aradaki boşluk (`background-clip:
+	   padding-box`) sırasıyla 2px ve 5px'e çıkıyor, tıpkı sitede olduğu gibi. */
+	:global(*) {
+		scrollbar-width: thin;
+		scrollbar-color: var(--fds-control-strong-fill-default) transparent;
+	}
+
+	:global(*::-webkit-scrollbar) {
+		width: 12px;
+		height: 12px;
+	}
+
+	:global(*::-webkit-scrollbar-track) {
+		background: transparent;
+	}
+
+	:global(*::-webkit-scrollbar-track:hover) {
+		background-color: var(--fds-layer-background-default);
+	}
+
+	:global(*::-webkit-scrollbar-thumb) {
+		background-color: var(--fds-control-strong-fill-default);
+		border: solid transparent;
+		border-width: 1px 4px 1px 6px;
+		background-clip: padding-box;
+		border-radius: 10px;
+		transition: border-left-width var(--fds-control-fast-duration, 0.15s) ease-out;
+	}
+
+	:global(*::-webkit-scrollbar-thumb:hover) {
+		border-left-width: 3px;
+	}
+
+	:global(*::-webkit-scrollbar-corner) {
+		background: transparent;
+	}
+
+	/* Chromium'un varsayılan yukarı/aşağı ok düğmeleri. Sitenin
+	   OverlayScrollbars kaydırma çubuğunda bunlar hiç yok — kaldırılıyor. */
+	:global(*::-webkit-scrollbar-button) {
+		display: none;
+		width: 0;
+		height: 0;
+	}
+
+	/* ==================================================================
 	   Durum kutusu renkleri
 	   ==================================================================
 	   Bunlar `--fds-*` setinde YOK. openani.me durum bildirimlerini Sonner ile

@@ -23,6 +23,7 @@ tauri-build = { version = "2", features = [] }
 # Sürüm sabit tutuluyor — unstable API'ler minor sürümlerde değişebilir.
 tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
 # Yalnızca dosya seçme diyaloğu için. Okuma/yazmayı kendi komutlarımızla
 # yapıyoruz ki fs eklentisinin geniş scope yapılandırmasına ihtiyaç olmasın.
 tauri-plugin-dialog = "2"

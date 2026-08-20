@@ -25,6 +25,16 @@ export interface AppSettings {
 	defaultPreviewPath: string;
 	/** Editörden ana ekrana dönerken açık proje otomatik kaydedilsin mi? */
 	autoSaveOnLeave: boolean;
+	/** Açılışta güncelleme olup olmadığı sessizce kontrol edilsin mi? */
+	updateAutoCheck: boolean;
+	/**
+	 * "Daha sonra hatırlat" ile geçilen sürüm.
+	 *
+	 * Boş dize = hiçbir sürüm atlanmadı. Kullanıcı bir güncellemeyi
+	 * ertelediğinde uygulama her açılışta aynı diyaloğu tekrar tekrar
+	 * göstermemeli — yalnızca DAHA YENİ bir sürüm çıktığında tekrar sorulmalı.
+	 */
+	updateSkipVersion: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -33,7 +43,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	defaultEditMode: "visual",
 	defaultViewport: "desktop",
 	defaultPreviewPath: "/",
-	autoSaveOnLeave: true
+	autoSaveOnLeave: true,
+	updateAutoCheck: true,
+	updateSkipVersion: ""
 };
 
 export function loadSettings(): AppSettings {

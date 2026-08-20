@@ -8,3 +8,9 @@ node_modules
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Güncelleyici imzalama anahtarı — ASLA depoya girmemeli. Private key,
+# GitHub Actions'ta `TAURI_SIGNING_PRIVATE_KEY` secret'ı olarak tutuluyor;
+# yerel bir kopya oluşturursanız bu satırlar onu bu depoda kilitli tutar.
+*.key
+*.key.pub

@@ -21,6 +21,8 @@
 	import AdvancedSections from "$lib/AdvancedSections.svelte";
 	import AboutDialog from "$lib/AboutDialog.svelte";
 	import AppSettings from "$lib/AppSettings.svelte";
+	import UpdateDialog from "$lib/UpdateDialog.svelte";
+	import { checkForUpdate, type Update } from "$lib/updater";
 	import ColorField from "$lib/ColorField.svelte";
 	import ColorPicker from "$lib/ColorPicker.svelte";
 	import CssEditor from "$lib/CssEditor.svelte";
@@ -892,6 +894,65 @@
 	let confirmResetAll = false;
 	let aboutDialogOpen = false;
 
+	// --- Güncelleyici ----------------------------------------------------
+	//
+	// Kontrol mantığı burada, gösterim `UpdateDialog.svelte`'de — ikisi ayrı
+	// çünkü Ayarlar sayfasındaki "Şimdi kontrol et" düğmesi de AYNI kontrolü
+	// tetikleyebilmeli, sonucu ise hep buradaki tek `updateAvailable`/
+	// `updateDialogOpen` çiftine yazılıyor.
+	let updateAvailable: Update | null = null;
+	let updateDialogOpen = false;
+	/** Ayarlar sayfasındaki elle kontrol düğmesinin durumu. */
+	let updateCheckStatus: "idle" | "checking" | "up-to-date" | "error" = "idle";
+	let updateCheckError = "";
+
+	/**
+	 * @param manual Ayarlar sayfasından elle mi tetiklendi? Otomatik açılış
+	 * kontrolü sessizdir (hata olursa kullanıcıyı rahatsız etmez); elle
+	 * tetiklenen kontrol ise "güncel" ya da hata durumunu görünür kılmalı —
+	 * aksi hâlde düğmeye basan kullanıcı hiçbir geri bildirim almaz.
+	 */
+	async function runUpdateCheck(manual: boolean) {
+		if (manual) {
+			updateCheckStatus = "checking";
+			updateCheckError = "";
+		}
+		try {
+			const update = await checkForUpdate();
+			if (update && update.version !== settings.updateSkipVersion) {
+				updateAvailable = update;
+				updateDialogOpen = true;
+				updateCheckStatus = "idle";
+			} else if (manual) {
+				updateCheckStatus = "up-to-date";
+				setTimeout(() => {
+					if (updateCheckStatus === "up-to-date") updateCheckStatus = "idle";
+				}, 4000);
+			}
+		} catch (e) {
+			if (manual) {
+				updateCheckStatus = "error";
+				updateCheckError = String(e);
+			}
+			// Otomatik kontrolde sessizce yutuluyor: ağ yoksa ya da GitHub
+			// erişilemezse editör kullanılamaz hâle gelmemeli.
+		}
+	}
+
+	/** Açılıştan birkaç saniye sonra, arka planda, sessizce. */
+	function checkForUpdatesOnStartup() {
+		if (!settings.updateAutoCheck) return;
+		setTimeout(() => runUpdateCheck(false), 3500);
+	}
+
+	/** "Daha Sonra Hatırlat" — bu sürümü kalıcı olarak atlar. */
+	function skipUpdate() {
+		if (updateAvailable) {
+			settings = { ...settings, updateSkipVersion: updateAvailable.version };
+		}
+		updateDialogOpen = false;
+	}
+
 	/**
 	 * Her şeyi varsayılana döndürür — ama CSS'i YENİDEN ÜRETMEZ.
 	 *
@@ -1406,7 +1467,7 @@
 	//
 	// Çözüm, diyalog açıkken önizlemeyi geçici olarak gizlemek. Zaten var olan
 	// görünürlük yolunu kullanıyoruz; yeni bir mekanizma eklenmiyor.
-	$: modalOpen = confirmLeave || namingOpen || confirmResetAll || aboutDialogOpen;
+	$: modalOpen = confirmLeave || namingOpen || confirmResetAll || aboutDialogOpen || updateDialogOpen;
 	$: syncPreviewVisibility(view, modalOpen);
 
 	async function syncPreviewVisibility(current: NavId, blocked: boolean) {
@@ -1458,6 +1519,7 @@
 		invoke<string>("projects_dir_path")
 			.then((path) => (projectsPath = path))
 			.catch(() => {});
+		checkForUpdatesOnStartup();
 
 		window.addEventListener("resize", syncBounds);
 		push();
@@ -1510,6 +1572,9 @@
 				onOpenProjectsFolder={openProjectsFolder}
 				onPreviewLogin={previewLogin}
 				{loggedIn}
+				onCheckForUpdates={() => runUpdateCheck(true)}
+				{updateCheckStatus}
+				{updateCheckError}
 			/>
 		{:else}
 			<!-- Editör: mevcut panel + önizleme yerleşimi olduğu gibi korunuyor. -->
@@ -1978,6 +2043,13 @@
 </ContentDialog>
 
 <AboutDialog open={aboutDialogOpen} {appVersion} onClose={() => (aboutDialogOpen = false)} />
+
+<UpdateDialog
+	open={updateDialogOpen}
+	update={updateAvailable}
+	onClose={() => (updateDialogOpen = false)}
+	onSkip={skipUpdate}
+/>
 
 <style>
 	/* Kısıt gereği burada GÖRSEL karar yok — yalnızca yerleşim iskeleti ve
