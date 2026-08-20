@@ -1,7 +1,180 @@
-# Tauri + SvelteKit + TypeScript
+<div align="center">
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+<img src="src-tauri/icons/icon.png" alt="OpenAnime Tema Editörü Logo" width="96" />
 
-## Recommended IDE Setup
+# OpenAnime Tema Editörü
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+**[openani.me](https://openani.me) için canlı önizlemeli, görsel bir masaüstü tema editörü.**
+
+<br/>
+
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
+![Svelte](https://img.shields.io/badge/Svelte-4-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+
+![Windows](https://img.shields.io/badge/Windows-Geliştirildi%20%26%20Test%20Edildi-0078D4?style=for-the-badge&logo=windows&logoColor=white)
+
+[![License](https://img.shields.io/badge/Lisans-MIT-green?style=flat-square)](./LICENSE)
+
+</div>
+
+---
+
+<div align="center">
+<img src=".github/assets/screenshot-editor.png" alt="Tema editörü — görsel kontroller ve canlı önizleme" width="860" />
+<br/><sub>Sol panel: görsel kontroller / kod editörü · Sağ panel: openani.me'nin canlı önizlemesi</sub>
+</div>
+
+---
+
+## <img src="https://api.iconify.design/fluent/info-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Proje Hakkında
+
+Bu depo, **[openani.me](https://openani.me)** için resmî olmayan bir masaüstü tema editörüdür. Sitenin kendi tema enjeksiyon noktasını (`localStorage.theme_content`) kullanarak, sitenin gerçek CSS'ini ve `fluent-svelte-extra` tasarım dilini birebir okuyup düzenlemenize izin verir.
+
+Uygulama tahmine değil, **doğrulanmış bulgulara** dayanır: her `--fds-*` token, her seçici ve her API yanıtı, sitenin canlı CSS/JS paketleri incelenerek teyit edilmiştir (bkz. [`PLAN.md`](./PLAN.md), [`TEMA-BULGULARI.md`](./TEMA-BULGULARI.md)). Üretilen `.css` dosyası, ekstra bir adım gerektirmeden sitenin kendi resmî tema sistemiyle **%100 uyumludur**.
+
+> [!NOTE]
+> Bu proje topluluk tarafından geliştirilmektedir, OpenAnime'ın resmî bir ürünü değildir.
+
+---
+
+## <img src="https://api.iconify.design/fluent/star-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Öne Çıkan Özellikler
+
+### <img src="https://api.iconify.design/fluent/paint-brush-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Canlı Önizlemeli Görsel Editör
+
+- Editör ekranı iki panelden oluşur: solda kategorilere ayrılmış görsel kontroller (Renkler, Şekil, Efekt, Medya, Bileşen, Gelişmiş), sağda **openani.me'nin gerçek kendisinin** çalıştığı, native bir webview.
+- Her kontrol değişikliği anında sağdaki önizlemeye yansır — ayrı bir "uygula" adımı yoktur.
+- Önizleme, sitenin masaüstü/tablet/mobil kırılma noktalarını **gerçekten** tetikleyecek şekilde daraltılabilir; sahte bir CSS ölçeklemesi değildir.
+
+### <img src="https://api.iconify.design/fluent/code-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; İki Yönlü Kod Editörü
+
+- Görsel kontrollerle aynı belge üzerinde çalışan bir CodeMirror tabanlı CSS editörü — birini değiştirmek diğerini günceller.
+- Otomatik tamamlama kataloğu (`bun run catalog`) hem `fluent-svelte-extra`'nın kendi `theme.css`/`switchable.css` dosyalarından hem de sitenin canlı bundle'larından **otomatik üretilir**; elle bakım gerekmez.
+
+### <img src="https://api.iconify.design/fluent/arrow-download-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; İçe/Dışa Aktarma
+
+- Bir GitHub deposundan `.css` tema dosyası doğrudan içe aktarılabilir.
+- Yerel bir `.css` dosyası açılıp düzenlenebilir, aynı dosyaya geri yazılabilir.
+- Tanınmayan/yabancı bir CSS bile ayrıştırılıp kontrollere olabildiğince eşlenir.
+
+### <img src="https://api.iconify.design/fluent/folder-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Yerel Proje Sistemi
+
+- Temalar `app_data_dir()/projects/` altında, proje başına tek bir JSON dosyası olarak saklanır — klasörü kopyalayarak yedeklemek yeterlidir.
+- Kaydedilen belge (`doc`) ile görsel kontrollerin durumu (`ui`) ayrı tutulur; bir bölümün kapalı olması ile açık-ama-varsayılan olması aynı CSS'i üretir, bu ayrım olmadan projeyi geri yüklediğinizde kontroller sıfırlanmış görünürdü.
+
+### <img src="https://api.iconify.design/fluent/person-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Hesap Kartı
+
+<div align="center">
+<img src=".github/assets/screenshot-account.png" alt="Ayarlar sayfasındaki hesap kartı" width="640" />
+</div>
+
+- Önizlemede giriş yaptıysanız Ayarlar sayfasında **gerçek openani.me profiliniz** — banner, avatar, durum emojisi, rozetleriniz (Yönetici, Fansub Yöneticisi, Geliştirici, Erken Destekçi, OpenAnime+ kademeleri) ve takipçi/takip edilen sayınız — sitenin kendi profil sayfasıyla aynı düzende gösterilir.
+- Takipçi/takip edilen sayılarına tıklayarak listeyi açabilir, "Profili openani.me'de aç" ile gerçek profil sayfasını sistem tarayıcınızda açabilirsiniz.
+- Hesap verisi, uygulamanın kendi ağ isteği atmasıyla DEĞİL, önizlemedeki oturumunuzun kendi güvenlik geçidi üzerinden çekilir — token uygulamaya hiç dokunmaz.
+
+### <img src="https://api.iconify.design/fluent/window-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Ekrana Akıllıca Sığan Pencere
+
+- Açılışta, birincil ekranınızın kullanılabilir alanı ölçülür; pencere bu alana sığmıyorsa (ör. küçük dizüstü ekranları) otomatik olarak küçültülüp ortalanır — görev çubuğunun altında kalmaz.
+
+### <img src="https://api.iconify.design/fluent/settings-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Uygulamanın Kendi Ayarları
+
+<div align="center">
+<img src=".github/assets/screenshot-settings.png" alt="Ayarlar sayfası" width="860" />
+</div>
+
+Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranışına dair tercihler: açılış düzenleme modu (görsel/kod), varsayılan önizleme genişliği ve sayfası, ana ekrana dönerken otomatik kaydetme.
+
+---
+
+## <img src="https://api.iconify.design/fluent/image-multiple-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Diğer Ekranlar
+
+<table>
+<tr>
+<td width="50%" align="center">
+<img src=".github/assets/screenshot-home.png" alt="Ana sayfa" width="100%" />
+<sub>Ana sayfa — kayıtlı projeler, yeni tema / GitHub'dan içe aktarma</sub>
+</td>
+<td width="50%" align="center">
+<img src=".github/assets/screenshot-about.png" alt="Hakkında penceresi" width="100%" />
+<sub>Hakkında penceresi</sub>
+</td>
+</tr>
+</table>
+
+---
+
+## <img src="https://api.iconify.design/fluent/arrow-download-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Kurulum
+
+Şu an için yalnızca **Windows**'ta derlenip test edilmiştir. [Releases](https://github.com/Dark-Hunter-TR/OpenAnime-Thema/releases) sekmesinden hazır bir sürüm varsa oradan indirebilir, yoksa aşağıdaki adımlarla kaynaktan derleyebilirsiniz.
+
+Tauri'nin platform bağımsız mimarisi nedeniyle macOS/Linux'ta da derlenmesi teorik olarak mümkündür, ancak bu platformlarda doğrulanmamıştır.
+
+---
+
+## <img src="https://api.iconify.design/fluent/wrench-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Kaynaktan Derleme
+
+### 1. Ön Gereksinimler
+
+- [Rust](https://www.rust-lang.org/tools/install) (Tauri çekirdeği için)
+- [Bun](https://bun.sh/) *(önerilen)* veya [Node.js/npm](https://nodejs.org/)
+- Tauri v2 sistem bağımlılıkları — bkz. [Tauri Ön Gereksinimleri](https://tauri.app/start/prerequisites/)
+
+### 2. Klonla & Çalıştır
+
+```bash
+git clone https://github.com/Dark-Hunter-TR/OpenAnime-Thema.git
+cd OpenAnime-Thema
+
+# Bağımlılıkları yükle
+bun install        # veya: npm install
+
+# Geliştirici modunda başlat (native pencere + hot reload)
+bun run tauri dev  # veya: npm run tauri dev
+```
+
+> Yalnızca arayüz kabuğunu tarayıcıda çalıştırmak için `bun run dev` yeterlidir; ancak önizleme webview'i ve dosya sistemi komutları gibi native özellikler için `tauri dev` gerekir.
+
+### 3. Yerel Paketleme (Build)
+
+```bash
+bun run tauri build   # veya: npm run tauri build
+```
+
+Çıktı: `src-tauri/target/release/bundle/` altında (NSIS `.exe` + MSI).
+
+### 4. Diğer Komutlar
+
+| Komut | Açıklama |
+| --- | --- |
+| `bun run check` | Svelte + TypeScript tip kontrolü |
+| `bun test src` | Birim testleri çalıştırır |
+| `bun run catalog` | Kod editörünün otomatik tamamlama kataloğunu, `fluent-svelte-extra` ve sitenin canlı bundle'larından yeniden üretir |
+| `cargo test` *(src-tauri içinde)* | Rust tarafındaki tema ayrıştırma/üretme testleri |
+
+---
+
+## <img src="https://api.iconify.design/fluent/building-multiple-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Mimari Genel Bakış
+
+| Katman | Konum | Sorumluluk |
+| --- | --- | --- |
+| **Native Çekirdek** | `src-tauri/src/*.rs` | Pencere yönetimi, tema ayrıştırma/üretme (`theme/`), proje kalıcılığı (`projects.rs`), önizleme webview'i ve hesap köprüsü (`preview.rs`) |
+| **Önizleme Köprüsü** | `src-tauri/src/preview_init.js` | Önizleme webview'ine enjekte edilen betik — tema uygulama ve openani.me'nin kendi oturumu üzerinden hesap verisi çekme |
+| **SvelteKit Arayüzü** | `src/` | Editör, ayarlar, ana ekran ve tüm görsel kontroller |
+| **Otomatik Katalog** | `scripts/build-catalog.mjs` | `src/lib/catalog.generated.ts`'i üretir — elle düzenlenmez |
+
+---
+
+## <img src="https://api.iconify.design/fluent/document-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Lisans
+
+Bu proje **MIT Lisansı** ile dağıtılmaktadır. Detaylar için [LICENSE](./LICENSE) dosyasına bakınız.
+
+---
+
+<div align="center">
+
+Web sürümü için: **[openani.me](https://openani.me)**
+
+<sub>Topluluk tarafından ❤️ ile geliştirildi.</sub>
+
+</div>
