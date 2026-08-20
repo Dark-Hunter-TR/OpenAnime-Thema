@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fade, scale } from "svelte/transition";
+	import { circOut } from "svelte/easing";
 
 	export let open = false;
 	export let appVersion = "v0.1.0";
@@ -40,19 +41,43 @@
 
 {#if open}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
+	<!--
+		Süreler ve eğri fluent-svelte-extra'nın KENDİ `ContentDialog`'undan
+		(takipçi/takip edilen modalı bunu kullanıyor): `content-dialog-smoke`
+		`--fds-control-faster-duration` (83ms) ile fade'liyor,
+		`content-dialog-container` `--fds-control-fast-duration` (167ms) +
+		`circOut` ile scale'liyor (bkz. theme.css). Kütüphanenin `getCSSDuration`
+		yardımcısı yalnızca içeride kullanılabiliyor, paketin dışa açtığı
+		bir şey değil — o yüzden sabit sayıları elle taşıdık.
+	-->
 	<div
 		class="content-dialog-container svelte-f1dwd4"
-		transition:fade={{ duration: 150 }}
+		transition:fade={{ duration: 83 }}
 		on:click|self={onClose}
 		role="presentation"
 	>
-		<div class="content-dialog-wrap">
+		<!--
+			`transition:scale` KASITLI olarak `.content-dialog-wrap`'te — yani
+			dialog kutusunu VE kapatma düğmesini BİRLİKTE sarıyor. Önceki
+			sürümde yalnızca `.content-dialog`'un kendi geçişi vardı, düğme ise
+			bir kardeş olarak dışarıda kalıp yalnızca üstteki `fade`'den
+			opaklık alıyordu — ikisi farklı hızda beliriyor, düğme dialogdan
+			önce "zaten oradaymış" gibi görünüyordu. Kütüphanenin kendi
+			`ContentDialog`'u (takipçi/takip edilen modalındaki kapatma
+			düğmesi) tam olarak bunu yapıyor: `content-dialog-container`
+			(dialog + düğme) TEK geçişle birlikte beliriyor (bkz.
+			node_modules/fluent-svelte-extra/ContentDialog/ContentDialog.svelte).
+			Aynı tekniği burada da uyguluyoruz.
+		-->
+		<div
+			class="content-dialog-wrap"
+			transition:scale={{ duration: 167, start: 1.05, easing: circOut }}
+		>
 			<div
 				class="content-dialog size-max svelte-f1dwd4"
 				role="dialog"
 				aria-modal="true"
 				id="about-dialog"
-				transition:scale={{ duration: 150, start: 0.95 }}
 			>
 				<div class="content-dialog-body svelte-f1dwd4">
 					<div id="main" class="fds-theme-dark svelte-cc3kyp">

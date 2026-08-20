@@ -25,7 +25,9 @@ import player from "@fluentui/svg-icons/icons/play_circle_24_regular.svg?raw";
 import focus from "@fluentui/svg-icons/icons/square_hint_24_regular.svg?raw";
 import file from "@fluentui/svg-icons/icons/document_24_regular.svg?raw";
 import open from "@fluentui/svg-icons/icons/folder_open_24_regular.svg?raw";
+import openExternal from "@fluentui/svg-icons/icons/open_24_regular.svg?raw";
 import save from "@fluentui/svg-icons/icons/save_24_regular.svg?raw";
+import refresh from "@fluentui/svg-icons/icons/arrow_clockwise_24_regular.svg?raw";
 
 // Gelişmiş özelleştirme seçenekleri ikon tanımları.
 import sidebar from "@fluentui/svg-icons/icons/panel_left_24_regular.svg?raw";
@@ -129,7 +131,9 @@ export const ICONS = {
 	focus,
 	file,
 	open,
+	openExternal,
 	save,
+	refresh,
 	sidebar,
 	surface,
 	link,

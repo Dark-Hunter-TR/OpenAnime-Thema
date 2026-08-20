@@ -17,6 +17,14 @@ pub const PREVIEW_LABEL: &str = "preview";
 pub const MAIN_LABEL: &str = "main";
 pub const SITE_URL: &str = "https://openani.me/";
 
+/// openani.me'nin resmi API sunucusu.
+///
+/// Sitenin kendi (herkese açık) istemci paketinden çıkarıldı — bundle'daki
+/// `env.PUBLIC_API_LINK` değeri bu. `fetch_account_info` (lib.rs) buraya
+/// sitenin kendi web istemcisinin attığı BİREBİR aynı isteği atıyor:
+/// `GET {API_BASE}/user` + `Authorization: <token>` başlığı.
+pub const API_BASE: &str = "https://api.openani.me";
+
 /// Frontend henüz ölçüm göndermeden önce kullanılacak sol boşluk.
 /// Gezinme şeridi (`NavRail`, 4.5rem = 72px) + editör paneli
 /// (`.shell { grid-template-columns: 420px 1fr }`) ile aynı tutulmalı —
@@ -48,11 +56,36 @@ fn init_script(doc: &ThemeDoc) -> String {
     let css = serde_json::to_string(&doc.emit_css()).unwrap_or_else(|_| "\"\"".into());
     let mode = serde_json::to_string(mode_str(doc.mode)).unwrap_or_else(|_| "\"dark\"".into());
 
+    let api_base = serde_json::to_string(API_BASE).unwrap_or_else(|_| "\"\"".into());
+
     INIT_JS
         .replace("\"__OA_INITIAL_CSS__\"", &css)
         .replace("\"__OA_INITIAL_MODE__\"", &mode)
+        .replace("\"__OA_API_BASE__\"", &api_base)
 }
 
+/// Sayfa içi API köprüsünü tetikler (bkz. `preview_init.js`).
+///
+/// Sonuç buradan DÖNMÜYOR: `webview.eval` değer döndürmez. Sayfa işi bitince
+/// `oa://account-result` olayını yayınlıyor, `lib.rs` -> `bridge_get` o olayı
+/// `request_id` ile eşleştirerek bekliyor.
+///
+/// `path` çağıranın doğruladığı bir API yolu (`/user`, `/user/<id>/followers`
+/// gibi). Serbest metin geçirilmemeli — köprü onu olduğu gibi `API_BASE`'in
+/// sonuna ekliyor.
+pub fn request_api(app: &AppHandle, request_id: &str, path: &str) -> Result<(), String> {
+    let Some(webview) = app.get_webview(PREVIEW_LABEL) else {
+        return Err("önizleme webview'i bulunamadı".into());
+    };
+    let id = serde_json::to_string(request_id).unwrap_or_else(|_| "\"\"".into());
+    let path = serde_json::to_string(path).unwrap_or_else(|_| "\"\"".into());
+    webview
+        .eval(format!(
+            "window.__OA_API_FETCH__ && window.__OA_API_FETCH__({id}, {path})"
+        ))
+        .map_err(|e| format!("hesap köprüsü çağrılamadı: {e}"))
+}
+                                                
 /// Ana pencereye önizleme webview'ini ekler.
 pub fn create(app: &AppHandle, doc: &ThemeDoc) -> Result<(), Box<dyn std::error::Error>> {
     let window = app

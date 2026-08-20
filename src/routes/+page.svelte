@@ -1323,10 +1323,18 @@
 
 	// --- Önizlemedeki oturum durumu ------------------------------------------
 	//
-	// Giriş, önizleme webview'inin İÇİNDE yapılıyor ve o webview'e bilerek
-	// Tauri IPC verilmedi (uzak origin'e IPC açmak PLAN.md §2.4'te de uyarılan
-	// bir risk). Bu yüzden durumu sayfadan mesajla öğrenmiyoruz; Rust,
-	// webview'in çerez kavanozunu doğrudan okuyor.
+	// Giriş, önizleme webview'inin İÇİNDE yapılıyor. Durumu sayfadan mesajla
+	// öğrenmiyoruz; Rust, webview'in çerez kavanozunu doğrudan okuyor — bu
+	// yolun hiçbir IPC'ye ihtiyacı yok.
+	//
+	// Not: o webview'e artık ÇOK DAR bir IPC yüzeyi açıldı (yalnızca
+	// `core:event:allow-emit`, yalnızca https://openani.me — bkz.
+	// `src-tauri/capabilities/preview-bridge.json`). PLAN.md §2.4'teki uyarı
+	// hiçbir şey açmamayı öneriyordu, ama hesap bilgisi başka türlü
+	// alınamıyor: api.openani.me'nin "Vanguard" geçidi `Gateway-Token`
+	// başlığı olmayan her isteği 401'liyor ve o başlık yalnızca sayfanın
+	// kendi wasm imzasıyla üretilebiliyor. Bu yüzden bu durum sorgusu
+	// özellikle eski (çerez okuyan) yolunda bırakıldı.
 	let loggedIn = false;
 	let loginTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -1362,11 +1370,17 @@
 		loginTimer = setInterval(refreshLoginState, 3000);
 	}
 
-	/** Önizlemeyi hesap sayfasına götürür (giriş yapılmışken). */
-	function openAccountInPreview() {
-		hasOpenProject = true;
-		view = "editor";
-		go("/settings");
+	/**
+	 * Ana ekrandaki "Hesap" düğmesi.
+	 *
+	 * Önceden editörü açıp önizlemeyi openani.me'nin gerçek `/settings`
+	 * sayfasına yönlendiriyordu. Artık editöre hiç girmiyor: doğrudan
+	 * uygulamanın kendi native ayarlar sayfasına gidiyor — orada hesap
+	 * bilgileri zaten uygulamanın kendi kartında gösteriliyor (bkz.
+	 * `AccountCard.svelte`).
+	 */
+	function openAccountSettings() {
+		navigate("settings");
 	}
 
 	async function openProjectsFolder() {
@@ -1480,7 +1494,7 @@
 				onDelete={handleDelete}
 				onPreviewLogin={previewLogin}
 				{loggedIn}
-				onOpenAccount={openAccountInPreview}
+				onOpenAccount={openAccountSettings}
 			/>
 		{:else if view === "settings"}
 			<AppSettings
@@ -1496,7 +1510,6 @@
 				onOpenProjectsFolder={openProjectsFolder}
 				onPreviewLogin={previewLogin}
 				{loggedIn}
-				onOpenAccount={openAccountInPreview}
 			/>
 		{:else}
 			<!-- Editör: mevcut panel + önizleme yerleşimi olduğu gibi korunuyor. -->

@@ -26,6 +26,7 @@
 		Tooltip
 	} from "fluent-svelte-extra";
 
+	import AccountCard from "$lib/AccountCard.svelte";
 	import Icon from "$lib/Icon.svelte";
 	import StatusBar from "$lib/StatusBar.svelte";
 	import SegmentedControl from "$lib/Segmented.svelte";
@@ -40,7 +41,6 @@
 	export let onPreviewLogin: () => void;
 	/** Önizlemede openani.me oturumu açık mı (Rust çerez kavanozundan okuyor). */
 	export let loggedIn = false;
-	export let onOpenAccount: () => void;
 
 	const dispatch = createEventDispatcher<{ change: AppSettings }>();
 
@@ -185,30 +185,24 @@
 		<section class="expand-section">
 			<TextBlock variant="bodyStrong">Hesap</TextBlock>
 
-			<Expander expandable={false}>
-				<Icon slot="icon" name="avatar" size={20} />
-				<div class="item">
-					<span class="item-header">
-						<TextBlock variant="body">OpenAnime hesabı</TextBlock>
-						<TextBlock variant="caption">
-							{loggedIn
-								? "Önizlemede oturum açık. Giriş gerektiren sayfalar önizlenebilir."
-								: "Önizlemede oturum açık değil."}
-						</TextBlock>
-					</span>
-					<span class="item-action">
-						{#if loggedIn}
-							<Button on:click={onOpenAccount}>
-								<Icon name="person" size={16} /><span class="gap">Hesabı önizlemede aç</span>
-							</Button>
-						{:else}
+			{#if loggedIn}
+				<AccountCard {onPreviewLogin} />
+			{:else}
+				<Expander expandable={false}>
+					<Icon slot="icon" name="avatar" size={20} />
+					<div class="item">
+						<span class="item-header">
+							<TextBlock variant="body">OpenAnime hesabı</TextBlock>
+							<TextBlock variant="caption">Önizlemede oturum açık değil.</TextBlock>
+						</span>
+						<span class="item-action">
 							<Button variant="accent" on:click={onPreviewLogin}>
 								<Icon name="person" size={16} /><span class="gap">Önizlemede giriş yap</span>
 							</Button>
-						{/if}
-					</span>
-				</div>
-			</Expander>
+						</span>
+					</div>
+				</Expander>
+			{/if}
 		</section>
 
 		<!-- --- Depolama ----------------------------------------------------- -->

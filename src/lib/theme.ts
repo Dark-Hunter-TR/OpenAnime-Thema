@@ -84,6 +84,43 @@ export interface LoginState {
  */
 export const previewLoginState = () => invoke<LoginState>("preview_login_state");
 
+/** openani.me'nin `/user` uç noktasından dönen ham hesap nesnesi. Şekli sabit
+ * değil — arayüz elindeki alanları genel biçimde gösterir (bkz. `AccountCard`). */
+export type AccountInfo = Record<string, unknown>;
+
+/**
+ * Giriş yapmış kullanıcının hesap bilgilerini çeker.
+ *
+ * İstek uygulamadan değil, önizleme webview'inde açık olan openani.me
+ * sayfasının İÇİNDEN atılıyor: `api.openani.me` "Vanguard" geçidinin
+ * arkasında ve `Gateway-Token` başlığı olmayan her isteği — kimlik
+ * doğrulama gerektirmeyenler dahil — 401'liyor. O başlığı sitenin kendi
+ * `window.fetch` yaması ekliyor, değerini `/osc.wasm` 35 saniyede bir
+ * yeniden imzalıyor; yani ne kopyalanabiliyor ne yeniden üretilebiliyor.
+ *
+ * Pratik sonuç: bu çağrı yalnızca önizleme yüklenmişken çalışır. Akışın
+ * tamamı için `src-tauri/src/preview_init.js` -> `__OA_ACCOUNT_FETCH__` ve
+ * `lib.rs` -> `fetch_account_info`.
+ */
+export const fetchAccountInfo = () => invoke<AccountInfo>("fetch_account_info");
+
+/** Takipçi/takip edilen listesindeki bir kayıt (bkz. `lib.rs` -> `fetch_account_follows`). */
+export interface FollowUser {
+	id: string;
+	username: string;
+	avatar?: string;
+}
+
+/**
+ * Takipçi ya da takip edilen listesini çeker.
+ *
+ * `fetchAccountInfo` ile aynı köprüyü kullanır — yani yine önizlemedeki
+ * openani.me sayfasının içinden geçer. Uç noktalar sitenin kendi profil
+ * diyaloglarıyla aynı: `/user/<id>/followers` ve `/user/<id>/following`.
+ */
+export const fetchAccountFollows = (userId: string, kind: "followers" | "following") =>
+	invoke<FollowUser[]>("fetch_account_follows", { userId, kind });
+
 /**
  * Ardışık çağrıları tek bir çağrıya indirger.
  *

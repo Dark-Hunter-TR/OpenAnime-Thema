@@ -197,6 +197,171 @@ async fn preview_login_state(app: AppHandle) -> Result<LoginState, String> {
     Ok(LoginState { logged_in })
 }
 
+/// Önizlemedeki `oa://account-result` köprü olayının adı (bkz. `preview_init.js`).
+const ACCOUNT_EVENT: &str = "oa://account-result";
+
+/// Sayfadan dönen köprü yanıtı.
+///
+/// `stage` yanıtın hangi noktada üretildiğini söylüyor; `status`/`body` yalnızca
+/// `"done"` aşamasında dolu.
+#[derive(serde::Deserialize)]
+struct AccountReply {
+    id: String,
+    stage: String,
+    #[serde(default)]
+    status: Option<u16>,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+/// Önizleme sayfası üzerinden openani.me API'sinden bir yol çeker.
+///
+/// **İstek buradan atılmıyor, önizleme sayfasının İÇİNDEN atılıyor.** Sebebi
+/// `preview_init.js`'deki köprünün başındaki uzun yorumda: `api.openani.me`
+/// "Vanguard" geçidinin arkasında ve `Gateway-Token` başlığı olmadan — kimlik
+/// doğrulama gerektirmeyen uç noktalar dâhil — her istek 401 dönüyor. O başlık
+/// sitenin kendi `window.fetch` yaması tarafından ekleniyor, değeri
+/// `/osc.wasm` ile 35 saniyede bir yeniden imzalanıyor. Yani token ne
+/// kopyalanabiliyor ne de yeniden üretilebiliyor; istek sayfanın yamalı
+/// `fetch`'iyle atılmak zorunda.
+///
+/// Bu fonksiyonun tek işi: köprüyü tetiklemek, `request_id` ile eşleşen olayı
+/// beklemek, gelen ham gövdeyi JSON'a çevirmek. `path`'i ÜRETEN ve doğrulayan
+/// çağıran taraf — bu köprü genel amaçlı bir API istemcisine dönüşmesin diye
+/// yalnızca aşağıdaki iki komut onu çağırıyor.
+///
+/// Zaman aşımı 30 sn: sayfa daha yeni açıldıysa köprü wasm geçidinin kurulmasını
+/// ~10 sn, 401 gelirse yeniden denemeyi ~2.5 sn bekliyor; ikisi de bu bütçenin
+/// içinde kalıyor.
+async fn bridge_get(app: &AppHandle, path: &str) -> Result<serde_json::Value, String> {
+    use tauri::Listener;
+
+    static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let request_id = format!(
+        "acc-{}",
+        NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+
+    // Dinleyici, köprü tetiklenmeden ÖNCE kurulmalı: sayfa çerezi ve geçit
+    // token'ı hazırsa yanıt aynı tur içinde dönebiliyor.
+    let (tx, rx) = tokio::sync::oneshot::channel::<AccountReply>();
+    let slot = std::sync::Mutex::new(Some(tx));
+    let wanted = request_id.clone();
+    let listener = app.listen_any(ACCOUNT_EVENT, move |event| {
+        let Ok(reply) = serde_json::from_str::<AccountReply>(event.payload()) else {
+            return;
+        };
+        // Eşzamanlı iki istek olabilir (kart açılışı + "Yenile"); her dinleyici
+        // yalnızca kendi isteğinin yanıtını alsın.
+        if reply.id != wanted {
+            return;
+        }
+        if let Ok(mut guard) = slot.lock() {
+            if let Some(tx) = guard.take() {
+                let _ = tx.send(reply);
+            }
+        }
+    });
+
+    if let Err(e) = preview::request_api(app, &request_id, path) {
+        app.unlisten(listener);
+        return Err(e);
+    }
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(30), rx).await;
+    app.unlisten(listener);
+
+    let reply = match outcome {
+        Ok(Ok(reply)) => reply,
+        // Kanal düştü: dinleyici kaldırıldı ama yanıt gelmedi.
+        Ok(Err(_)) => return Err("hesap köprüsünden yanıt alınamadı".into()),
+        Err(_) => {
+            return Err(
+                "önizleme yanıt vermedi — openani.me sayfasının yüklenmesini bekleyip tekrar deneyin"
+                    .into(),
+            )
+        }
+    };
+
+    match reply.stage.as_str() {
+        "no-session" => Err("openani.me'de oturum açık değil".into()),
+        "no-gateway" => Err(
+            "openani.me'nin güvenlik geçidi (Vanguard) henüz kurulmadı — önizlemeyi açıp \
+             sayfanın yüklenmesini bekleyin"
+                .into(),
+        ),
+        "error" => Err(format!(
+            "hesap bilgisi alınamadı: {}",
+            reply.message.unwrap_or_else(|| "bilinmeyen hata".into())
+        )),
+        // Uygulama uzun süre arka planda kaldıysa (Chromium'un arka plan
+        // zamanlayıcı kısıtlaması sitenin 35sn/5dk'lık geçit yenileme
+        // döngülerini geciktirir) köprü iki denemeden sonra da 401/400
+        // görürse sayfayı kendi kendine yeniliyor (bkz. `preview_init.js`).
+        // O yenileme birkaç saniye sürüyor; bu arada net bir mesaj veriyoruz.
+        "reloading" => Err(
+            "oturum bayatlamış — önizleme kendini yeniliyor, birkaç saniye içinde tekrar deneyin"
+                .into(),
+        ),
+        "done" => {
+            let status = reply.status.unwrap_or(0);
+            let body = reply.body.unwrap_or_default();
+            match status {
+                // 401/400 buraya artık ulaşmıyor: köprü ikisini de "reloading"
+                // ile ele alıyor. Geriye yalnızca beklenmeyen durum kodları
+                // kalıyor (ör. 5xx).
+                200..=299 => serde_json::from_str::<serde_json::Value>(&body)
+                    .map_err(|e| format!("yanıt ayrıştırılamadı: {e}")),
+                _ => Err(format!("sunucu {status} döndürdü")),
+            }
+        }
+        other => Err(format!("beklenmeyen köprü yanıtı: {other}")),
+    }
+}
+
+/// Giriş yapmış kullanıcının kendi hesap nesnesi (`GET /user`).
+#[tauri::command]
+async fn fetch_account_info(app: AppHandle) -> Result<serde_json::Value, String> {
+    bridge_get(&app, "/user").await
+}
+
+/// Takipçi / takip edilen listesini çeker.
+///
+/// Uç noktalar ve yanıt anahtarları sitenin kendi profil diyaloglarından
+/// alındı: `GET /user/<id>/followers` -> `{ followers: [...] }`,
+/// `GET /user/<id>/following` -> `{ following: [...] }`. Liste öğelerinde
+/// arayüzün kullandığı alanlar `id`, `username`, `avatar`.
+///
+/// `user_id` ve `kind` burada DOĞRULANIYOR. Köprü aldığı yolu olduğu gibi
+/// `API_BASE`'in sonuna ekliyor; doğrulama olmasa frontend'den gelen bir
+/// dize onu istediği uç noktaya yönlendirebilirdi. Kimlikler openani.me'de
+/// yalnızca rakamlardan oluşan dizeler (JSON'da string; sayı olsalardı
+/// 2^53'ü aştıkları için tarayıcı tarafında hassasiyet kaybederlerdi).
+#[tauri::command]
+async fn fetch_account_follows(
+    app: AppHandle,
+    user_id: String,
+    kind: String,
+) -> Result<serde_json::Value, String> {
+    if kind != "followers" && kind != "following" {
+        return Err(format!("bilinmeyen liste türü: {kind}"));
+    }
+    if user_id.is_empty() || user_id.len() > 32 || !user_id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("geçersiz kullanıcı kimliği".into());
+    }
+
+    let mut body = bridge_get(&app, &format!("/user/{user_id}/{kind}")).await?;
+
+    // Yanıt sarmalı: {"followers": [...]} / {"following": [...]}. Sarmalın
+    // içindekini döndürüyoruz ki arayüz iki listeyi aynı şekilde işlesin.
+    match body.get_mut(&kind) {
+        Some(list) => Ok(list.take()),
+        None => Err(format!("yanıtta '{kind}' alanı yok")),
+    }
+}
+
 /// Dışarıdan gelen bir temayı (GitHub, pano, dosya) kontrollere eşler.
 ///
 /// `apply_css_text`'ten ayrı bir komut: o, editörün kendi işaretleyici
@@ -246,6 +411,8 @@ pub fn run() {
             preview_navigate,
             set_preview_visible,
             preview_login_state,
+            fetch_account_info,
+            fetch_account_follows,
             import_css_text,
             projects::projects_dir_path,
             projects::list_projects,
@@ -261,6 +428,23 @@ pub fn run() {
                 guard.clone()
             };
             preview::create(app.handle(), &doc)?;
+
+            // Burada bir oturum tazeleme döngüsü YOK ve olmamalı.
+            //
+            // Önceden 58 saniyede bir `POST /user/refresh` çağıran bir kalp atışı
+            // vardı; iki ayrı sebeple kaldırıldı. Birincisi: istek Rust'tan
+            // atıldığı için `Gateway-Token` taşımıyordu, yani hiçbir zaman
+            // başarılı olmuyordu (bkz. `fetch_account_info`). İkincisi — asıl
+            // önemlisi — başarılı olsaydı zararlı olurdu: `/user/refresh` YENİ bir
+            // `refreshToken` döndürüyor (rotasyon) ve sayfa bu çağrıyı
+            // `navigator.locks.request("openanime_token_refresh_lock")` kilidi
+            // ile serileştirip `oa_last_refresh_timestamp` üzerinden 5 dakikalık
+            // bir pencereyle sınırlıyor. Paralel bir tazeleme, sayfanın elindeki
+            // refresh token'ı geçersizleştirip oturumu düşürebilirdi.
+            //
+            // Token yönetimi tamamen sayfaya bırakıldı: sitenin kendi auth mutex'i
+            // 8 dakikada bir ve sekme görünür olunca tazeliyor.
+
             Ok(())
         })
         .run(tauri::generate_context!())
