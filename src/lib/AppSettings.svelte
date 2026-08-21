@@ -61,8 +61,11 @@
 	export let projectsPath = "";
 	export let appVersion = "";
 	export let onOpenProjectsFolder: () => void;
-	export let onPreviewLogin: () => void;
-	/** Önizlemede openani.me oturumu açık mı (Rust çerez kavanozundan okuyor). */
+	export let onLogin: () => void;
+	/** Çıkış tamamlandığında oturum durumunu tazelemek için. */
+	export let onLoggedOut: () => void;
+	/** openani.me oturumu açık mı (Rust, önizleme webview'inin çerez
+	 * kavanozundan okuyor — kullanıcı için görünmez bir ayrıntı). */
 	export let loggedIn = false;
 	export let onCheckForUpdates: () => void;
 	/** Kontrol mantığı `+page.svelte`'de yaşıyor (Ayarlar'daki düğme ile
@@ -124,21 +127,57 @@
 			<TextBlock variant="bodyStrong" class="title">Hesap</TextBlock>
 
 			{#if loggedIn}
-				<AccountCard {onPreviewLogin} />
+				<AccountCard {onLogin} {onLoggedOut} />
 			{:else}
 				<Expander class="space-between" expandable={false}>
 					<Icon slot="icon" name="person" size={20} />
 					<div class="item-header">
 						<TextBlock variant="body">OpenAnime hesabı</TextBlock>
 						<TextBlock variant="caption" class="text-secondary">
-							Önizlemede oturum açık değil.
+							Oturum açık değil.
 						</TextBlock>
 					</div>
 					<div class="expander-control">
-						<Button variant="hyperlink" on:click={onPreviewLogin}>Önizlemede giriş yap</Button>
+						<Button variant="hyperlink" on:click={onLogin}>Giriş yap</Button>
 					</div>
 				</Expander>
 			{/if}
+		</section>
+
+		<!-- --- Discord ---------------------------------------------------------- -->
+		<!-- Tek katlanan satır, gövdede tek anahtar. Hesap'ın hemen altında,
+		     çünkü ikisi de dış servislerle ilgili; depolama ve güncelleme gibi
+		     bakım ayarları aşağıda kalmalı. -->
+		<section class="expand-section">
+			<TextBlock variant="bodyStrong" class="title">Discord</TextBlock>
+
+			<Expander>
+				<Icon slot="icon" name="discord" size={20} />
+				<div class="item-header">
+					<TextBlock variant="body">Rich Presence</TextBlock>
+					<TextBlock variant="caption" class="text-secondary">
+						{settings.discordRpc ? "Discord'da görünüyorsun" : "Kapalı"}
+					</TextBlock>
+				</div>
+
+				<svelte:fragment slot="content">
+					<div class="items">
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Ne yaptığımı Discord'da göster</TextBlock>
+								<TextBlock variant="caption" class="text-secondary">
+									Hangi bölümde olduğun ve düzenlediğin temanın adı Discord
+									profilinde görünür. Discord kapalıysa hiçbir şey olmaz.
+								</TextBlock>
+							</div>
+							<div class="expander-control">
+								<TextBlock variant="body">{onOff(settings.discordRpc)}</TextBlock>
+								<ToggleSwitch bind:checked={settings.discordRpc} />
+							</div>
+						</div>
+					</div>
+				</svelte:fragment>
+			</Expander>
 		</section>
 
 		<!-- --- Görünüm ------------------------------------------------------ -->
@@ -345,6 +384,7 @@
 				</svelte:fragment>
 			</Expander>
 		</section>
+
 	</div>
 </div>
 

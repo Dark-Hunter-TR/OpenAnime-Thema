@@ -1,3 +1,4 @@
+mod discord;
 mod preview;
 mod projects;
 mod theme;
@@ -214,28 +215,43 @@ struct AccountReply {
     body: Option<String>,
     #[serde(default)]
     message: Option<String>,
+    /// Yalnızca giriş köprüsü doldurur: istek başarılı mı?
+    #[serde(default)]
+    ok: Option<bool>,
+    /// Yalnızca giriş köprüsü doldurur: hesabın e-postası doğrulanmış mı?
+    #[serde(default)]
+    verified: Option<bool>,
+    /// Yalnızca QR köprüsü doldurur: "qr" | "success" | "error" | "idle".
+    #[serde(default)]
+    kind: Option<String>,
+    /// Yalnızca QR köprüsü doldurur: gösterilecek QR görselinin kaynağı.
+    #[serde(default)]
+    image: Option<String>,
 }
 
-/// Önizleme sayfası üzerinden openani.me API'sinden bir yol çeker.
+/// Köprüyü tetikler ve `request_id` ile eşleşen yanıtı bekler.
 ///
-/// **İstek buradan atılmıyor, önizleme sayfasının İÇİNDEN atılıyor.** Sebebi
-/// `preview_init.js`'deki köprünün başındaki uzun yorumda: `api.openani.me`
-/// "Vanguard" geçidinin arkasında ve `Gateway-Token` başlığı olmadan — kimlik
-/// doğrulama gerektirmeyen uç noktalar dâhil — her istek 401 dönüyor. O başlık
-/// sitenin kendi `window.fetch` yaması tarafından ekleniyor, değeri
-/// `/osc.wasm` ile 35 saniyede bir yeniden imzalanıyor. Yani token ne
-/// kopyalanabiliyor ne de yeniden üretilebiliyor; istek sayfanın yamalı
-/// `fetch`'iyle atılmak zorunda.
+/// `bridge_get` ile `account_login` arasındaki TEK ortak parça bu: benzersiz
+/// bir istek kimliği üretmek, dinleyiciyi kurmak, tetiklemek, zaman aşımıyla
+/// beklemek. İkisinin ayrıştığı yer `stage` yorumlaması — o yüzden burası ham
+/// `AccountReply` döndürüyor, karar çağırana ait.
 ///
-/// Bu fonksiyonun tek işi: köprüyü tetiklemek, `request_id` ile eşleşen olayı
-/// beklemek, gelen ham gövdeyi JSON'a çevirmek. `path`'i ÜRETEN ve doğrulayan
-/// çağıran taraf — bu köprü genel amaçlı bir API istemcisine dönüşmesin diye
-/// yalnızca aşağıdaki iki komut onu çağırıyor.
+/// `trigger` bir kapanış (closure) çünkü iki yolun sayfaya geçirdiği argümanlar
+/// farklı (biri API yolu, diğeri kimlik bilgisi) ve o farkı bu fonksiyonun
+/// bilmesine gerek yok.
 ///
-/// Zaman aşımı 30 sn: sayfa daha yeni açıldıysa köprü wasm geçidinin kurulmasını
-/// ~10 sn, 401 gelirse yeniden denemeyi ~2.5 sn bekliyor; ikisi de bu bütçenin
-/// içinde kalıyor.
-async fn bridge_get(app: &AppHandle, path: &str) -> Result<serde_json::Value, String> {
+/// `timeout_secs` çağrıya göre değişiyor: normal istekler için 30 sn yeter
+/// (köprü geçidin kurulmasını ~10 sn, 401 sonrası yeniden denemeyi ~2.5 sn
+/// bekliyor), QR akışı ise kullanıcının telefonuyla kod okutmasını beklediği
+/// için daha uzun soluklu.
+async fn bridge_await<F>(
+    app: &AppHandle,
+    timeout_secs: u64,
+    trigger: F,
+) -> Result<AccountReply, String>
+where
+    F: FnOnce(&AppHandle, &str) -> Result<(), String>,
+{
     use tauri::Listener;
 
     static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -265,25 +281,46 @@ async fn bridge_get(app: &AppHandle, path: &str) -> Result<serde_json::Value, St
         }
     });
 
-    if let Err(e) = preview::request_api(app, &request_id, path) {
+    if let Err(e) = trigger(app, &request_id) {
         app.unlisten(listener);
         return Err(e);
     }
 
-    let outcome = tokio::time::timeout(std::time::Duration::from_secs(30), rx).await;
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
     app.unlisten(listener);
 
-    let reply = match outcome {
-        Ok(Ok(reply)) => reply,
+    match outcome {
+        Ok(Ok(reply)) => Ok(reply),
         // Kanal düştü: dinleyici kaldırıldı ama yanıt gelmedi.
-        Ok(Err(_)) => return Err("hesap köprüsünden yanıt alınamadı".into()),
-        Err(_) => {
-            return Err(
-                "önizleme yanıt vermedi — openani.me sayfasının yüklenmesini bekleyip tekrar deneyin"
-                    .into(),
-            )
-        }
-    };
+        Ok(Err(_)) => Err("hesap köprüsünden yanıt alınamadı".into()),
+        Err(_) => Err(
+            "önizleme yanıt vermedi — openani.me sayfasının yüklenmesini bekleyip tekrar deneyin"
+                .into(),
+        ),
+    }
+}
+
+/// Önizleme sayfası üzerinden openani.me API'sinden bir yol çeker.
+///
+/// **İstek buradan atılmıyor, önizleme sayfasının İÇİNDEN atılıyor.** Sebebi
+/// `preview_init.js`'deki köprünün başındaki uzun yorumda: `api.openani.me`
+/// "Vanguard" geçidinin arkasında ve `Gateway-Token` başlığı olmadan — kimlik
+/// doğrulama gerektirmeyen uç noktalar dâhil — her istek 401 dönüyor. O başlık
+/// sitenin kendi `window.fetch` yaması tarafından ekleniyor, değeri
+/// `/osc.wasm` ile 35 saniyede bir yeniden imzalanıyor. Yani token ne
+/// kopyalanabiliyor ne de yeniden üretilebiliyor; istek sayfanın yamalı
+/// `fetch`'iyle atılmak zorunda.
+///
+/// Bu fonksiyonun tek işi: köprüyü tetiklemek, `request_id` ile eşleşen olayı
+/// beklemek, gelen ham gövdeyi JSON'a çevirmek. `path`'i ÜRETEN ve doğrulayan
+/// çağıran taraf — bu köprü genel amaçlı bir API istemcisine dönüşmesin diye
+/// yalnızca aşağıdaki iki komut onu çağırıyor.
+///
+/// Zaman aşımı 30 sn: sayfa daha yeni açıldıysa köprü wasm geçidinin kurulmasını
+/// ~10 sn, 401 gelirse yeniden denemeyi ~2.5 sn bekliyor; ikisi de bu bütçenin
+/// içinde kalıyor.
+async fn bridge_get(app: &AppHandle, path: &str) -> Result<serde_json::Value, String> {
+    let reply = bridge_await(app, 30, |app, id| preview::request_api(app, id, path)).await?;
 
     match reply.stage.as_str() {
         "no-session" => Err("openani.me'de oturum açık değil".into()),
@@ -317,6 +354,174 @@ async fn bridge_get(app: &AppHandle, path: &str) -> Result<serde_json::Value, St
                 _ => Err(format!("sunucu {status} döndürdü")),
             }
         }
+        other => Err(format!("beklenmeyen köprü yanıtı: {other}")),
+    }
+}
+
+/// Bir giriş denemesinin sonucu.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoginOutcome {
+    /// Hesabın e-postası doğrulanmış mı? `false` ise oturum açıldı ama
+    /// kullanıcının siteden doğrulama adımını tamamlaması gerekiyor.
+    verified: bool,
+}
+
+/// Kullanıcı adına openani.me'de oturum açar.
+///
+/// ## İstek neden yine önizlemeden çıkıyor
+///
+/// Vanguard geçidi burada da geçerli: `POST /user/auth` `Gateway-Token`
+/// başlığı olmadan 401 döner ve o başlık yalnızca sayfanın `/osc.wasm` ile
+/// imzalanan yamalı `fetch`'i tarafından eklenebiliyor (ayrıntı için
+/// `preview_init.js`'in başındaki yorum). Yani "uygulama içi giriş formu",
+/// isteği Rust'tan atmak anlamına GELMİYOR — form yereldeyken taşıma yine
+/// sayfanın üzerinden gidiyor.
+///
+/// ## Kimlik bilgisi burada saklanmıyor
+///
+/// `email`/`password` yalnızca bu çağrının ömrü boyunca yaşıyor: köprüye
+/// geçiriliyor, sayfa isteği atıyor, fonksiyon dönüyor. Hiçbir yere
+/// yazılmıyor, tekrar kullanılmıyor. Dönen `token`/`refreshToken` ise Rust'a
+/// hiç ULAŞMIYOR — sayfa onları doğrudan çereze yazıyor (sitenin kendi giriş
+/// modalının yaptığının aynısı) ve uygulama oturumu yalnızca
+/// `preview_login_state` ile, çerezin VARLIĞINA bakarak öğreniyor.
+#[tauri::command]
+async fn account_login(
+    app: AppHandle,
+    email: String,
+    password: String,
+) -> Result<LoginOutcome, String> {
+    // Boş alanla sunucuya gitmenin anlamı yok; arayüz zaten engelliyor ama
+    // komut kendi başına da savunulabilir olmalı.
+    let email = email.trim().to_string();
+    if email.is_empty() || password.is_empty() {
+        return Err("e-posta ve parola gerekli".into());
+    }
+
+    let reply = bridge_await(&app, 30, |app, id| {
+        preview::request_login(app, id, &email, &password)
+    })
+    .await?;
+
+    match reply.stage.as_str() {
+        "no-gateway" => Err(
+            "openani.me'nin güvenlik geçidi (Vanguard) henüz kurulmadı — önizlemeyi açıp              sayfanın yüklenmesini bekleyin"
+                .into(),
+        ),
+        // Köprü, geçit oturumu bayatladığı için sayfayı yeniliyor (bkz.
+        // `preview_init.js` -> `gatewayRejected`). Parola YENİDEN GÖNDERİLMEDİ;
+        // kullanıcı birkaç saniye sonra tekrar denemeli.
+        "reloading" => Err(
+            "openani.me oturumu tazeleniyor — birkaç saniye bekleyip tekrar deneyin".into(),
+        ),
+        "error" => Err(format!(
+            "giriş yapılamadı: {}",
+            reply.message.unwrap_or_else(|| "bilinmeyen hata".into())
+        )),
+        "done" => {
+            if reply.ok == Some(true) {
+                Ok(LoginOutcome {
+                    verified: reply.verified.unwrap_or(true),
+                })
+            } else {
+                // Sunucunun kendi mesajı (İngilizce) geliyor; Türkçeleştirmeyi
+                // arayüz yapıyor (bkz. `$lib/account.ts` -> `loginErrorText`),
+                // çünkü eşleştirme tablosu sitenin çeviri dosyasından geliyor
+                // ve orada güncel tutmak daha kolay.
+                Err(reply.message.unwrap_or_else(|| "giriş reddedildi".into()))
+            }
+        }
+        other => Err(format!("beklenmeyen köprü yanıtı: {other}")),
+    }
+}
+
+/// QR akışından bir sonraki olay.
+///
+/// `kind`:
+///   - `"qr"`      -> `image` gösterilecek QR kaynağı (kod kısa aralıklarla
+///                    yenilendiği için birden çok kez gelir)
+///   - `"success"` -> oturum açıldı; `verified` e-posta doğrulanmış mı
+///   - `"error"`   -> `message` gösterilecek hata
+///   - `"idle"`    -> bu turda olay yok; arayüz tekrar sormalı
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QrEvent {
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verified: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+/// QR ile giriş akışından bir sonraki olayı bekler.
+///
+/// Akış ilk çağrıda kendiliğinden açılıyor. Arayüz bunu bir DÖNGÜDE çağırıyor:
+/// `"qr"` gelince görseli tazeliyor, `"idle"` gelince yeniden soruyor,
+/// `"success"`/`"error"` ile döngüyü bitiriyor.
+///
+/// Zaman aşımı 40 sn, sayfa tarafındaki 25 sn'lik yoklamadan uzun — böylece
+/// olay yokken bile yanıtı sayfa veriyor (`"idle"`) ve arayüz gerçek bir zaman
+/// aşımı hatası görmüyor. Kullanıcının kodu okutması dakikalar sürebileceği
+/// için akışın kendisinin bir süre sınırı YOK; `account_qr_stop` ile kapanıyor.
+#[tauri::command]
+async fn account_qr_next(app: AppHandle) -> Result<QrEvent, String> {
+    let reply = bridge_await(&app, 40, preview::request_qr_next).await?;
+
+    match reply.stage.as_str() {
+        "done" => {
+            let kind = reply.kind.unwrap_or_else(|| "idle".into());
+            Ok(QrEvent {
+                image: reply.image,
+                verified: reply.verified,
+                message: reply.message,
+                kind,
+            })
+        }
+        "no-gateway" => Err(
+            "openani.me'nin güvenlik geçidi (Vanguard) henüz kurulmadı — birkaç saniye              bekleyip tekrar deneyin"
+                .into(),
+        ),
+        "error" => Err(format!(
+            "QR akışı başarısız: {}",
+            reply.message.unwrap_or_else(|| "bilinmeyen hata".into())
+        )),
+        other => Err(format!("beklenmeyen köprü yanıtı: {other}")),
+    }
+}
+
+/// QR akışını kapatır (diyalog kapanınca ya da başka adıma geçilince).
+#[tauri::command]
+fn account_qr_stop(app: AppHandle) -> Result<(), String> {
+    preview::request_qr_stop(&app)
+}
+
+/// openani.me oturumunu kapatır.
+///
+/// İki adım: sunucudaki `refreshToken`'ı iptal etmek (`POST /user/logout`) ve
+/// önizlemenin çerezlerini silmek. İkincisi belirleyici olan — uygulamanın
+/// "giriş yapılmış mı" sorusuna verdiği yanıt `token` çerezinin varlığına
+/// bakıyor (bkz. `preview_login_state`).
+///
+/// Sunucu isteği EN İYİ ÇABA: sayfa onu beklemiyor, geçit bayatsa atlanıyor.
+/// Sitenin kendi `logout()`'u da `fetch`'i `await` etmeden çerezleri siliyor.
+/// Tersi olsaydı, geçit toparlanmadığı sürece kullanıcı oturumunu hiç
+/// kapatamazdı — çıkışın başarısız olabilmesi kabul edilebilir bir sonuç değil.
+#[tauri::command]
+async fn account_logout(app: AppHandle) -> Result<(), String> {
+    let reply = bridge_await(&app, 30, preview::request_logout).await?;
+
+    match reply.stage.as_str() {
+        "done" if reply.ok == Some(true) => Ok(()),
+        "done" => Err(reply
+            .message
+            .unwrap_or_else(|| "oturum kapatılamadı".into())),
+        "error" => Err(format!(
+            "oturum kapatılamadı: {}",
+            reply.message.unwrap_or_else(|| "bilinmeyen hata".into())
+        )),
         other => Err(format!("beklenmeyen köprü yanıtı: {other}")),
     }
 }
@@ -412,6 +617,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(ThemeState::default())
+        .manage(discord::DiscordState::default())
         .invoke_handler(tauri::generate_handler![
             apply_theme,
             apply_css_text,
@@ -423,6 +629,10 @@ pub fn run() {
             preview_navigate,
             set_preview_visible,
             preview_login_state,
+            account_login,
+            account_logout,
+            account_qr_next,
+            account_qr_stop,
             fetch_account_info,
             fetch_account_follows,
             import_css_text,
@@ -432,8 +642,22 @@ pub fn run() {
             projects::load_project,
             projects::save_project,
             projects::delete_project,
-            projects::rename_project
+            projects::rename_project,
+            discord::discord_update,
+            discord::discord_set_enabled
         ])
+        .on_window_event(|window, event| {
+            // Pencere kapanırken Discord aktivitesini temizle.
+            //
+            // Süreç öldüğünde Discord presence'ı kendi zaman aşımına kadar
+            // (yaklaşık bir dakika) göstermeye devam ediyor; kullanıcı
+            // uygulamayı kapattıktan sonra hâlâ "tema düzenliyor" görünmesi
+            // yanlış olurdu. `CloseRequested` seçildi çünkü `Destroyed`
+            // tetiklendiğinde thread'in temizliği bitirecek zamanı kalmıyor.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                window.state::<discord::DiscordState>().shutdown();
+            }
+        })
         .setup(|app| {
             // Pencere `tauri.conf.json`'da sabit 1400x900 açılıyor — bu, o
             // boyuttan küçük ekranlarda (ör. 1366x768 dizüstü) pencerenin

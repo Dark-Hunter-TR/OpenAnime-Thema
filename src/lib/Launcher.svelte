@@ -40,8 +40,9 @@
 	export let onImport: (payload: { css: string; name: string; source: string }) => void;
 	export let onRename: (id: string, name: string) => void;
 	export let onDelete: (id: string) => void;
-	export let onPreviewLogin: () => void;
-	/** Önizlemede openani.me oturumu açık mı (Rust çerez kavanozundan okuyor). */
+	export let onLogin: () => void;
+	/** openani.me oturumu açık mı (Rust, önizleme webview'inin çerez
+	 * kavanozundan okuyor — kullanıcı için görünmez bir ayrıntı). */
 	export let loggedIn = false;
 	export let onOpenAccount: () => void;
 
@@ -203,7 +204,7 @@
 					<Icon name="person" size={16} /><span class="gap">Hesap</span>
 				</Button>
 			{:else}
-				<Button on:click={onPreviewLogin}>
+				<Button on:click={onLogin}>
 					<Icon name="person" size={16} /><span class="gap">Giriş yap</span>
 				</Button>
 			{/if}

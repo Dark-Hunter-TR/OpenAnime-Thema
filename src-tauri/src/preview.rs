@@ -85,6 +85,71 @@ pub fn request_api(app: &AppHandle, request_id: &str, path: &str) -> Result<(), 
         ))
         .map_err(|e| format!("hesap köprüsü çağrılamadı: {e}"))
 }
+
+/// Giriş köprüsünü tetikler (bkz. `preview_init.js` -> `__OA_API_LOGIN__`).
+///
+/// `request_api`'den ayrı bir fonksiyon çünkü yükü farklı: bu, sayfaya kimlik
+/// bilgisi geçiriyor. `serde_json::to_string` ile kaçışlamak burada isteğe
+/// bağlı değil — parola tırnak, ters bölü ya da satır sonu içerebiliyor ve
+/// dize birleştirmeyle üretilen bir `eval` gövdesi o karakterlerle bozulurdu.
+pub fn request_login(
+    app: &AppHandle,
+    request_id: &str,
+    email: &str,
+    password: &str,
+) -> Result<(), String> {
+    let Some(webview) = app.get_webview(PREVIEW_LABEL) else {
+        return Err("önizleme webview'i bulunamadı".into());
+    };
+    let id = serde_json::to_string(request_id).unwrap_or_else(|_| "\"\"".into());
+    let email = serde_json::to_string(email).unwrap_or_else(|_| "\"\"".into());
+    let password = serde_json::to_string(password).unwrap_or_else(|_| "\"\"".into());
+    webview
+        .eval(format!(
+            "window.__OA_API_LOGIN__ && window.__OA_API_LOGIN__({id}, {email}, {password})"
+        ))
+        .map_err(|e| format!("giriş köprüsü çağrılamadı: {e}"))
+}
+
+/// Çıkış köprüsünü tetikler (bkz. `preview_init.js` -> `__OA_API_LOGOUT__`).
+pub fn request_logout(app: &AppHandle, request_id: &str) -> Result<(), String> {
+    let Some(webview) = app.get_webview(PREVIEW_LABEL) else {
+        return Err("önizleme webview'i bulunamadı".into());
+    };
+    let id = serde_json::to_string(request_id).unwrap_or_else(|_| "\"\"".into());
+    webview
+        .eval(format!(
+            "window.__OA_API_LOGOUT__ && window.__OA_API_LOGOUT__({id})"
+        ))
+        .map_err(|e| format!("çıkış köprüsü çağrılamadı: {e}"))
+}
+
+/// QR (DAG) akışından bir sonraki olayı ister
+/// (bkz. `preview_init.js` -> `__OA_API_DAG_NEXT__`).
+///
+/// Akış ilk çağrıda kendiliğinden başlıyor; ayrı bir "başlat" komutu yok.
+pub fn request_qr_next(app: &AppHandle, request_id: &str) -> Result<(), String> {
+    let Some(webview) = app.get_webview(PREVIEW_LABEL) else {
+        return Err("önizleme webview'i bulunamadı".into());
+    };
+    let id = serde_json::to_string(request_id).unwrap_or_else(|_| "\"\"".into());
+    webview
+        .eval(format!(
+            "window.__OA_API_DAG_NEXT__ && window.__OA_API_DAG_NEXT__({id})"
+        ))
+        .map_err(|e| format!("QR köprüsü çağrılamadı: {e}"))
+}
+
+/// QR akışını kapatır. Yanıt beklemiyor — diyalog kapanırken çağrılıyor ve
+/// akışın kapanmasını beklemenin arayüze bir faydası yok.
+pub fn request_qr_stop(app: &AppHandle) -> Result<(), String> {
+    let Some(webview) = app.get_webview(PREVIEW_LABEL) else {
+        return Ok(());
+    };
+    webview
+        .eval("window.__OA_API_DAG_STOP__ && window.__OA_API_DAG_STOP__()")
+        .map_err(|e| format!("QR köprüsü kapatılamadı: {e}"))
+}
                                                 
 /// Ana pencereye önizleme webview'ini ekler.
 pub fn create(app: &AppHandle, doc: &ThemeDoc) -> Result<(), Box<dyn std::error::Error>> {

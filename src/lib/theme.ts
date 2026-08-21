@@ -84,6 +84,85 @@ export interface LoginState {
  */
 export const previewLoginState = () => invoke<LoginState>("preview_login_state");
 
+export interface LoginOutcome {
+	/** `false` ise oturum açıldı ama e-posta doğrulaması bekliyor. */
+	verified: boolean;
+}
+
+/**
+ * openani.me'de oturum açar.
+ *
+ * Form uygulamanın kendisinde, ama İSTEK yine önizlemedeki sayfadan çıkıyor:
+ * `POST /user/auth` de Vanguard'ın arkasında ve `Gateway-Token` başlığı
+ * yalnızca sayfanın yamalı `fetch`'iyle eklenebiliyor. Yani önizlemenin
+ * yüklenmiş olması bu çağrı için de şart.
+ *
+ * Parola buradan Rust'a, oradan sayfaya geçer ve orada kalır; uygulama onu
+ * hiçbir yere yazmaz. Dönen erişim token'ı ise uygulamaya hiç uğramaz —
+ * sayfa onu doğrudan çereze yazar (bkz. `preview_init.js` -> `__OA_API_LOGIN__`).
+ */
+export const accountLogin = (email: string, password: string) =>
+	invoke<LoginOutcome>("account_login", { email, password });
+
+/** QR akışından gelen tek bir olay (bkz. `lib.rs` -> `QrEvent`). */
+export interface QrEvent {
+	/** `"qr"` | `"success"` | `"error"` | `"idle"` */
+	kind: string;
+	/** `kind === "qr"`: gösterilecek QR görselinin kaynağı. */
+	image?: string;
+	/** `kind === "success"`: hesabın e-postası doğrulanmış mı. */
+	verified?: boolean;
+	/** `kind === "error"`: gösterilecek mesaj. */
+	message?: string;
+}
+
+/**
+ * QR (DAG) ile giriş akışından bir sonraki olayı bekler.
+ *
+ * Akış ilk çağrıda kendiliğinden açılıyor. Bir DÖNGÜDE çağrılmalı: `"idle"`
+ * gelirse olay yok demektir, tekrar sorulur; `"qr"` gelince görsel tazelenir
+ * (kod kısa aralıklarla yenileniyor); `"success"` ya da `"error"` döngüyü
+ * bitirir. Bittiğinde `stopAccountQr` çağrılmalı ki akış kapansın.
+ */
+export const accountQrNext = () => invoke<QrEvent>("account_qr_next");
+
+/** QR akışını kapatır. Hata yutuluyor — kapatma başarısızlığı kullanıcıyı
+ * ilgilendiren bir şey değil. */
+export const stopAccountQr = () => invoke<void>("account_qr_stop").catch(() => {});
+
+/**
+ * openani.me oturumunu kapatır.
+ *
+ * Sunucudaki `refreshToken`'ı iptal eder ve önizlemenin çerezlerini siler.
+ * Sunucu isteği en iyi çaba — çıkış, geçit erişilemez olsa bile gerçekleşir
+ * (bkz. `preview_init.js` -> `__OA_API_LOGOUT__`). Sonrasında önizleme
+ * kendini yeniliyor ki site de kullanıcıyı çıkmış göstersin.
+ */
+export const accountLogout = () => invoke<void>("account_logout");
+
+/**
+ * Sunucunun İngilizce hata mesajını Türkçeye çevirir.
+ *
+ * Eşleştirmeler sitenin kendi çeviri dosyasından alındı; anahtarlar API'nin
+ * `error` alanında döndürdüğü metinlerin birebir kendisi. Tanımadığımız bir
+ * kod gelirse olduğu gibi gösteriyoruz — yanlış bir tahminle çevirmektense
+ * ham mesajı göstermek daha yararlı.
+ */
+export function loginErrorText(raw: string): string {
+	const map: Record<string, string> = {
+		"Invalid password": "Parola hatalı.",
+		"User not found": "Bu e-posta ile bir hesap bulunamadı.",
+		"No such user found": "Bu e-posta ile bir hesap bulunamadı.",
+		"Specify a valid e-mail address": "Geçerli bir e-posta adresi girin.",
+		"Invalid data": "Geçersiz veri.",
+		"Invalid body": "Hatalı istek içeriği.",
+		"Invalid token": "Token geçersiz veya sunucu hatası oluştu.",
+		"Captcha invalid": "Captcha geçersiz.",
+		Unauthorized: "Yetersiz yetki."
+	};
+	return map[raw] ?? raw;
+}
+
 /** openani.me'nin `/user` uç noktasından dönen ham hesap nesnesi. Şekli sabit
  * değil — arayüz elindeki alanları genel biçimde gösterir (bkz. `AccountCard`). */
 export type AccountInfo = Record<string, unknown>;

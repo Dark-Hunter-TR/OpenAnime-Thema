@@ -27,14 +27,18 @@
 	import Icon from "$lib/Icon.svelte";
 	import StatusBar from "$lib/StatusBar.svelte";
 	import {
+		accountLogout,
 		fetchAccountFollows,
 		fetchAccountInfo,
 		type AccountInfo,
 		type FollowUser
 	} from "$lib/theme";
 
-	/** Önizlemedeki GERÇEK giriş sayfasını açar (`+page.svelte` -> `previewLogin`). */
-	export let onPreviewLogin: () => void;
+	/** Uygulama içi giriş diyaloğunu açar (`+page.svelte` -> `openLoginDialog`). */
+	export let onLogin: () => void;
+	/** Çıkış tamamlandığında çağrılır — çağıran taraf oturum durumunu
+	 * tazeleyip kartı giriş ekranına döndürüyor. */
+	export let onLoggedOut: () => void;
 
 	let account: AccountInfo | null = null;
 	let loading = false;
@@ -183,6 +187,34 @@
 		void openUrl(`https://openani.me/profile/${userId}`);
 	}
 
+	let loggingOut = false;
+	let logoutError = "";
+
+	/**
+	 * Oturumu kapatır.
+	 *
+	 * Onay istemiyoruz: sitenin kendi çıkışı da sormuyor ve işlem geri
+	 * alınabilir (tekrar giriş yapılır). Yanlışlıkla basmaya karşı düğme
+	 * vurgusuz ve diğer eylemden ayrı duruyor.
+	 */
+	async function logout() {
+		if (loggingOut) return;
+		loggingOut = true;
+		logoutError = "";
+		try {
+			await accountLogout();
+			// Kart artık giriş yapmamış duruma dönecek; yerel hesabı da
+			// düşürüyoruz ki bir sonraki girişte eski kullanıcı bir an için
+			// görünmesin.
+			account = null;
+			onLoggedOut();
+		} catch (e) {
+			logoutError = typeof e === "string" ? e : String(e);
+		} finally {
+			loggingOut = false;
+		}
+	}
+
 	// Durum: profildeki avatarın sağ altındaki küçük yuvarlak. Sitede
 	// `statusProps: {text: user.status.text, emoji: user.status.emoji}`.
 	$: status = (account?.status ?? null) as { emoji?: unknown; text?: unknown } | null;
@@ -247,13 +279,14 @@
 
 			• "Tekrar dene" — önizlemedeki openani.me henüz hazır değilse işe
 			  yarar. Hesap isteği o sayfanın İÇİNDEN atılıyor (Vanguard geçidi
-			  yüzünden başka türlü mümkün değil).
+			  yüzünden başka türlü mümkün değil); bu kullanıcıya görünmeyen,
+			  tamamen teknik bir ayrıntı.
 
 			• "Tekrar giriş yap" — oturumun kendisi düşmüşse (401) gerekir;
 			  bu durumda tekrar denemek aynı hatayı verir.
 		-->
 		<div class="error-actions">
-			<Button variant="accent" on:click={onPreviewLogin}>
+			<Button variant="accent" on:click={onLogin}>
 				<Icon name="person" size={14} /><span class="gap">Tekrar giriş yap</span>
 			</Button>
 			<Button on:click={load}>
@@ -353,11 +386,25 @@
 			</div>
 		</div>
 
-		<span>
+		{#if logoutError}
+			<StatusBar
+				severity="critical"
+				title="Çıkış yapılamadı"
+				message={logoutError}
+				closable={false}
+			/>
+		{/if}
+
+		<div class="account-actions">
 			<Button on:click={openProfileInBrowser} disabled={!userId}>
 				<Icon name="openExternal" size={16} /><span class="gap">Profili openani.me'de aç</span>
 			</Button>
-		</span>
+			<Button on:click={logout} disabled={loggingOut}>
+				<Icon name="person" size={16} /><span class="gap">
+					{loggingOut ? "Çıkış yapılıyor…" : "Çıkış yap"}
+				</span>
+			</Button>
+		</div>
 	{/if}
 </div>
 
@@ -393,6 +440,13 @@
 </ContentDialog>
 
 <style>
+	.account-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
 	.account {
 		display: flex;
 		flex-direction: column;

@@ -35,6 +35,15 @@ export interface AppSettings {
 	 * göstermemeli — yalnızca DAHA YENİ bir sürüm çıktığında tekrar sorulmalı.
 	 */
 	updateSkipVersion: string;
+	/**
+	 * Discord'da "OpenAnime Theme oynuyor" olarak görünülsün mü?
+	 *
+	 * Varsayılan KAPALI. Bu ayar, kullanıcının ne yaptığını üçüncü bir
+	 * tarafa (Discord'a) ve oradan da arkadaş listesine duyuruyor; düzenlenen
+	 * temanın adı da buna dâhil. Böyle bir yayını sormadan başlatmak doğru
+	 * olmaz — kullanıcı açıkça açmalı.
+	 */
+	discordRpc: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -45,7 +54,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	defaultPreviewPath: "/",
 	autoSaveOnLeave: true,
 	updateAutoCheck: true,
-	updateSkipVersion: ""
+	updateSkipVersion: "",
+	discordRpc: false
 };
 
 export function loadSettings(): AppSettings {

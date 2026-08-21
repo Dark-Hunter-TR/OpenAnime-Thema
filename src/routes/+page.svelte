@@ -21,6 +21,7 @@
 	import AdvancedSections from "$lib/AdvancedSections.svelte";
 	import AboutDialog from "$lib/AboutDialog.svelte";
 	import AppSettings from "$lib/AppSettings.svelte";
+	import LoginDialog from "$lib/LoginDialog.svelte";
 	import UpdateDialog from "$lib/UpdateDialog.svelte";
 	import { checkForUpdate, type Update } from "$lib/updater";
 	import ColorField from "$lib/ColorField.svelte";
@@ -34,6 +35,7 @@
 	import Section from "$lib/Section.svelte";
 	import SegmentedControl from "$lib/Segmented.svelte";
 	import TitleBar from "$lib/TitleBar.svelte";
+	import { setPresenceEnabled, updatePresence } from "$lib/discord";
 	import type { NavId } from "$lib/nav";
 	import {
 		DEFAULT_SETTINGS,
@@ -1367,19 +1369,58 @@
 	}
 
 	/**
-	 * Kullanıcıyı önizlemedeki GERÇEK giriş sayfasına götürür.
+	 * Uygulama içi giriş diyaloğunu açar.
 	 *
-	 * Uygulama içi bir giriş formu bilerek yok: openani.me üçüncü taraf
-	 * uygulamalara açık, resmî bir kimlik doğrulama akışı sunmuyor ve
-	 * kullanıcıdan parola istemek resmî olmayan bir yöntem olurdu. Önizleme
-	 * webview'i kendi çerez kavanozunu tuttuğu için buradaki giriş tarayıcıdaki
-	 * girişle aynı şekilde çalışıyor ve kimlik bilgileri uygulamaya hiç
-	 * uğramıyor.
+	 * Görünümü DEĞİŞTİRMİYOR: kullanıcı hangi ekrandaysa diyalog orada açılır.
+	 * Önceki sürüm editöre atlayıp önizlemeyi gösteriyordu; hem gereksizdi hem
+	 * de ekranın görünen kısmını bozuyordu (önizleme diyaloğun üstüne çizilir).
+	 *
+	 * Kullanıcı açısından önizlemenin girişle bir ilgisi yok. Teknik olarak
+	 * yine gerekli ama görünmeden: `POST /user/auth` Vanguard geçidinin
+	 * arkasında ve `Gateway-Token` başlığı yalnızca sitenin `/osc.wasm` ile
+	 * imzalanan yamalı `fetch`'i tarafından eklenebiliyor — doğrudan istek
+	 * 401 + "Unauthorized access is denied by OpenAnime Vanguard." dönüyor
+	 * (curl ile doğrulandı). Yani önizleme sayfası isteğin "posta kutusu";
+	 * yüklü olması yeter, görünür olması gerekmiyor. Hesap kartı da aynı
+	 * köprüyü aynı şekilde, önizleme gizliyken kullanıyor.
 	 */
-	function previewLogin() {
+	function openLoginDialog() {
+		loginDialogOpen = true;
+	}
+
+	let loginDialogOpen = false;
+
+	/** Giriş başarılı: oturum durumunu hemen tazele, 3 sn'lik anketi bekleme. */
+	async function onLoginSuccess() {
+		loginDialogOpen = false;
+		await refreshLoginState();
+	}
+
+	/**
+	 * Çıkış tamamlandı: oturum durumunu hemen tazele.
+	 *
+	 * Kısa bir bekleme var, çünkü köprü çerezleri sildikten SONRA önizlemeyi
+	 * yeniliyor (bkz. `preview_init.js` -> `__OA_API_LOGOUT__`). Hemen
+	 * sorsaydık `preview_login_state` çerez kavanozunu yenileme başlamadan
+	 * okuyabilir ve kullanıcıyı hâlâ giriş yapmış gösterebilirdi. 3 sn'lik
+	 * anket zaten yakalardı ama arayüzün o kadar geç tepki vermesi yanlış
+	 * görünürdü.
+	 */
+	async function onLoggedOut() {
+		await new Promise((resolve) => setTimeout(resolve, 250));
+		await refreshLoginState();
+	}
+
+	/**
+	 * Kayıt / parola sıfırlama / QR / e-posta doğrulama için sitenin kendisine
+	 * bırakır. Giriş diyaloğunun aksine BURADA önizlemeye geçiyoruz — kullanıcı
+	 * o akışları sitede kendisi tamamlayacak, yani önizlemeyi görmesi gerekiyor.
+	 */
+	function openSiteForAuth() {
+		loginDialogOpen = false;
 		hasOpenProject = true;
 		view = "editor";
-		go("/login");
+		go("/");
 	}
 
 	// --- Önizlemedeki oturum durumu ------------------------------------------
@@ -1467,7 +1508,17 @@
 	//
 	// Çözüm, diyalog açıkken önizlemeyi geçici olarak gizlemek. Zaten var olan
 	// görünürlük yolunu kullanıyoruz; yeni bir mekanizma eklenmiyor.
-	$: modalOpen = confirmLeave || namingOpen || confirmResetAll || aboutDialogOpen || updateDialogOpen;
+	// Önizleme `add_child` ile eklenmiş NATİF bir webview ve her zaman host
+	// sayfanın İÇERİĞİNİN ÜSTÜNE çiziliyor (bkz. `preview.rs`) — z-index onu
+	// etkilemiyor. Bu yüzden ekranı kaplayan her diyalog burada listelenmek
+	// ZORUNDA; listelenmezse diyalog açılır ama önizlemenin altında kalır.
+	$: modalOpen =
+		confirmLeave ||
+		namingOpen ||
+		confirmResetAll ||
+		aboutDialogOpen ||
+		updateDialogOpen ||
+		loginDialogOpen;
 	$: syncPreviewVisibility(view, modalOpen);
 
 	async function syncPreviewVisibility(current: NavId, blocked: boolean) {
@@ -1504,6 +1555,21 @@
 	}
 	$: if (settings?.appTheme) {
 		applyAppTheme(settings.appTheme);
+	}
+
+	// --- Discord Rich Presence ---------------------------------------------
+	//
+	// İki ayrı reaktif ifade, çünkü tetikleyicileri farklı: birincisi yalnızca
+	// ayar değiştiğinde, ikincisi kullanıcı uygulamada gezindikçe çalışıyor.
+	// Tek ifadede birleştirilseydi her sekme değişimi `discord_set_enabled`'ı
+	// da gereksiz yere çağırırdı.
+	$: setPresenceEnabled(settings?.discordRpc ?? false);
+
+	// `projectName` editörde açık olan temanın adı; diğer görünümlerde
+	// Discord'a gönderilmiyor (bkz. `discord.rs` -> `describe`), ama burada
+	// filtrelemeye gerek yok — Rust tarafı görünüme göre zaten yok sayıyor.
+	$: if (settings?.discordRpc) {
+		updatePresence(view, projectName, editMode);
 	}
 
 	onMount(() => {
@@ -1554,7 +1620,7 @@
 				onImport={handleImport}
 				onRename={handleRename}
 				onDelete={handleDelete}
-				onPreviewLogin={previewLogin}
+				onLogin={openLoginDialog}
 				{loggedIn}
 				onOpenAccount={openAccountSettings}
 			/>
@@ -1570,7 +1636,8 @@
 				{projectsPath}
 				{appVersion}
 				onOpenProjectsFolder={openProjectsFolder}
-				onPreviewLogin={previewLogin}
+				onLogin={openLoginDialog}
+				{onLoggedOut}
 				{loggedIn}
 				onCheckForUpdates={() => runUpdateCheck(true)}
 				{updateCheckStatus}
@@ -2049,6 +2116,13 @@
 	update={updateAvailable}
 	onClose={() => (updateDialogOpen = false)}
 	onSkip={skipUpdate}
+/>
+
+<LoginDialog
+	open={loginDialogOpen}
+	onClose={() => (loginDialogOpen = false)}
+	onSuccess={onLoginSuccess}
+	onOpenSite={openSiteForAuth}
 />
 
 <style>

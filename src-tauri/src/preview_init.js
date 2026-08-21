@@ -249,4 +249,428 @@
 				reply({ stage: "error", message: String(e) });
 			});
 	};
+
+	/**
+	 * Giriş köprüsü: `POST /user/auth`'u SAYFANIN KENDİSİNDEN çağırır.
+	 *
+	 * Sözleşme sitenin kendi giriş modalından birebir alındı:
+	 *
+	 *   POST {API_BASE}/user/auth   {"email": ..., "password": ...}
+	 *     -> { token, refreshToken, verified, ... }   (başarı)
+	 *     -> { error: "<İngilizce mesaj>" }           (hata)
+	 *
+	 * Başarıdan sonra site erişim bilgilerini ÇEREZE kendisi yazıyor; sunucu
+	 * `Set-Cookie` döndürmüyor. Bu yüzden aynı iki çağrıyı biz de yapmak
+	 * zorundayız, aksi hâlde istek başarılı olur ama oturum hiçbir yerde
+	 * açılmazdı. `window.setCookie` sayfanın kendi global yardımcısı (app.html)
+	 * ve alan adını doğru hesaplıyor; `document.cookie`'yi elle yazmak
+	 * `.openani.me` yerine yalnızca `openani.me`ye yazardı.
+	 *
+	 * Süreler de siteyle aynı: token 7 gün, refreshToken 90 gün.
+	 *
+	 * DİKKAT: `token`/`refreshToken` yanıtta Rust'a GÖNDERİLMİYOR. Uygulamanın
+	 * onlara ihtiyacı yok — oturumun açıldığının kanıtı çerezin kendisi ve onu
+	 * `preview_login_state` zaten çerez kavanozundan okuyor. IPC'ye koymak
+	 * kimlik bilgisini gereksiz yere bir katman daha dolaştırmak olurdu.
+	 */
+	window.__OA_API_LOGIN__ = function (requestId, email, password) {
+		function reply(payload) {
+			payload.id = requestId;
+			try {
+				window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+					event: EVENT,
+					payload: payload
+				});
+			} catch (e) {}
+		}
+
+		function postLogin() {
+			// `window.fetch` — sitenin YAMALI olanı; Gateway-Token'ı o ekliyor.
+			return window
+				.fetch(API_BASE + "/user/auth", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ email: email, password: password })
+				})
+				.then(function (r) {
+					return r
+						.json()
+						.catch(function () {
+							return null;
+						})
+						.then(function (data) {
+							return { status: r.status, data: data };
+						});
+				});
+		}
+
+		/**
+		 * Yanıt, kimlik bilgisinin değil GEÇİDİN reddi mi?
+		 *
+		 * Ayrım kritik: yanlış parolayı tekrar denemenin anlamı yok, bayat bir
+		 * geçit oturumunu tekrar denemenin ise var. Durum kodu tek başına
+		 * ayırt etmiyor — sitenin kendi modali da durum koduna değil gövdeye
+		 * bakıyor: yanlış parola 200 + {"error":"Invalid password"} olarak
+		 * geliyor, Vanguard reddi ise 401/400 + {"code":"error.unauthorized"}.
+		 */
+		function gatewayRejected(res) {
+			if (!res) return false;
+			// SIRA ÖNEMLİ: Vanguard'ın reddi
+			// {"code":"error.unauthorized","error":"Unauthorized","message":"...Vanguard."}
+			// yani `error` alanı ONDA DA dolu. Önce `error`a bakılırsa geçit reddi
+			// "parola hatası" sanılır ve kurtarma hiç çalışmaz. Ayırt edici olan
+			// `code`. (Doğrudan curl ile doğrulandı.)
+			if (res.data && res.data.code === "error.unauthorized") return true;
+			if (res.data && res.data.error) return false;
+			return res.status === 401 || res.status === 400;
+		}
+
+		function finish(res) {
+			// Sunucu hatayı 200 gövdesinde de döndürebiliyor.
+			if (res.data && res.data.error) {
+				reply({ stage: "done", ok: false, message: String(res.data.error) });
+				return;
+			}
+			if (!res.data || !res.data.token) {
+				reply({ stage: "done", ok: false, message: "sunucu " + res.status + " döndürdü" });
+				return;
+			}
+
+			try {
+				window.setCookie("token", res.data.token, "7");
+				if (res.data.refreshToken) {
+					window.setCookie("refreshToken", res.data.refreshToken, "90");
+				}
+			} catch (e) {
+				reply({ stage: "done", ok: false, message: "oturum çerezi yazılamadı" });
+				return;
+			}
+
+			// `verified` false ise hesap açıldı ama e-posta doğrulanmamış.
+			// Sitenin akışı burada doğrulama adımına geçiyor; bizde böyle bir
+			// ekran yok, durumu olduğu gibi bildirip kullanıcıyı siteye
+			// yönlendirmek arayüzün işi.
+			reply({ stage: "done", ok: true, verified: res.data.verified !== false });
+		}
+
+		waitForGateway(40) // ~10 sn
+			.then(function (ready) {
+				if (!ready) {
+					reply({ stage: "no-gateway" });
+					return null;
+				}
+				return postLogin();
+			})
+			.then(function (res) {
+				if (!res) return null;
+				if (!gatewayRejected(res)) {
+					finish(res);
+					return null;
+				}
+
+				// Buraya düşmenin en sık sebebi: giriş diyaloğu açıkken önizleme
+				// GİZLİ oluyor (bkz. `+page.svelte` -> `modalOpen`) ve Chromium'un
+				// arka plan zamanlayıcı kısıtlaması sitenin 35 sn'lik yeniden
+				// imzalama döngüsünü durduruyor; elimizdeki geçit oturumu
+				// bayatlıyor. `__OA_API_FETCH__` ile aynı kurtarma: önce kısa bir
+				// bekleyip tekrar dene.
+				return new Promise(function (resolve) {
+					setTimeout(resolve, 2500);
+				})
+					.then(postLogin)
+					.then(function (retry) {
+						if (!gatewayRejected(retry)) {
+							finish(retry);
+							return null;
+						}
+						// İki deneme de aynı bayat oturumu kullandı. Yeni bir
+						// sessionId almanın tek yolu sitenin önyükleme zinciri;
+						// onu ancak sayfayı yenileyerek tetikleyebiliyoruz.
+						// Parola burada YENİDEN GÖNDERİLMİYOR — kullanıcı sayfa
+						// toparlandıktan sonra tekrar dener.
+						reply({ stage: "reloading" });
+						setTimeout(function () {
+							window.location.reload();
+						}, 50);
+						return null;
+					});
+			})
+			.catch(function (e) {
+				reply({ stage: "error", message: String(e) });
+			});
+	};
+
+	/**
+	 * Çıkış köprüsü: oturumu kapatır.
+	 *
+	 * Sitenin kendi `logout()` fonksiyonunun aynısı:
+	 *
+	 *   fetch(`${API}/user/logout`, {method:"POST",
+	 *         body: JSON.stringify({refreshToken: getCookie("refreshToken")})})
+	 *   setCookie("token", "", -1); setCookie("refreshToken", "", -1)
+	 *
+	 * ## Sıra neden böyle
+	 *
+	 * Sitede de o `fetch` BEKLENMİYOR (await yok) — çıkışın kullanıcı açısından
+	 * gerçekleşmesi çerezlerin silinmesine bağlı, sunucu isteğine değil. Aynı
+	 * mantığı koruyoruz: önce çerezleri siliyoruz ve yanıtı hemen döndürüyoruz,
+	 * `POST /user/logout` arkada en iyi çaba olarak gidiyor. Böylece geçit
+	 * bayatsa bile çıkış YİNE de çalışıyor — tersi olsaydı, oturumu kapatmak
+	 * isteyen kullanıcı geçidin toparlanmasını beklemek zorunda kalırdı.
+	 *
+	 * `refreshToken` çerez silinmeden ÖNCE okunuyor; sunucunun onu iptal
+	 * edebilmesi için değere ihtiyacı var.
+	 *
+	 * Sonunda sayfa yenileniyor: çerezler gitse de sitenin kendi bellekteki
+	 * kullanıcı store'u hâlâ dolu olurdu ve önizleme kullanıcıyı giriş yapmış
+	 * göstermeye devam ederdi. Sitenin `logout()`'u da aynı sebeple ana sayfaya
+	 * yönlendiriyor.
+	 */
+	/**
+	 * QR (DAG) ile giriş köprüsü.
+	 *
+	 * Sitenin akışı: `GET {API_BASE}/dag` bir SSE akışı döndürüyor ve üç tür
+	 * olay geliyor —
+	 *
+	 *   {"type":"qr",      "data": "<görsel kaynağı>"}   -> ekranda göster
+	 *   {"type":"success", "data": {token, refreshToken, verified}}
+	 *   {"type":"error",   "data"|"error": "<mesaj>"}
+	 *
+	 * QR kod kısa aralıklarla yenileniyor, yani `qr` olayı birden çok kez
+	 * geliyor. Başarıda çerezleri sitenin yaptığı gibi biz yazıyoruz.
+	 *
+	 * ## Neden kuyruk + yoklama
+	 *
+	 * Köprünün geri kalanı tek istek/tek yanıt. Bu akış ise SÜREKLİ; üstelik
+	 * kullanıcının telefonuyla kodu okutması dakikalar sürebilir. Olayları
+	 * kuyruğa alıp `__OA_API_DAG_NEXT__` ile teker teker teslim ediyoruz:
+	 * arayüz bir döngüde çağırıyor, kuyruk boşsa ~25 sn yoklanıp `idle`
+	 * dönülüyor ve arayüz yeniden çağırıyor.
+	 *
+	 * `idle` yolu şart: Rust tarafındaki bekleme zaman aşımına uğrasaydı,
+	 * o sırada gelen bir olay kimsenin dinlemediği bir istek kimliğine
+	 * gönderilip KAYBOLURDU. Kuyrukta beklettiğimiz için hiçbir olay düşmüyor.
+	 */
+	var dag = null;
+
+	function dagPush(msg) {
+		if (dag) dag.queue.push(msg);
+	}
+
+	function dagStop() {
+		if (!dag) return;
+		try {
+			dag.controller.abort();
+		} catch (e) {}
+		dag = null;
+	}
+
+	/** Küçük bir SSE ayrıştırıcısı — yalnızca `data:` satırlarını topluyor. */
+	function sseParser(onData) {
+		var buf = "";
+		var SEP = "\n\n";
+		return function feed(chunk) {
+			// Satır sonlarını tek biçime indiriyoruz; SSE hem CRLF hem LF
+			// kullanabiliyor ve ayırıcıyı iki kez aramak gereksiz.
+			buf = (buf + chunk).split("\r\n").join("\n").split("\r").join("\n");
+			for (;;) {
+				var idx = buf.indexOf(SEP);
+				if (idx === -1) return;
+				var raw = buf.slice(0, idx);
+				buf = buf.slice(idx + SEP.length);
+				var data = [];
+				raw.split("\n").forEach(function (line) {
+					if (line.indexOf("data:") === 0) data.push(line.slice(5).replace(/^ /, ""));
+				});
+				if (data.length) onData(data.join("\n"));
+			}
+		};
+	}
+
+	function dagComplete(payload) {
+		// Sitedeki `dh()` ile aynı: gövde dize gelirse JSON dene, olmazsa
+		// tamamını token say.
+		var d = payload;
+		if (typeof d === "string") {
+			try {
+				d = JSON.parse(d);
+			} catch (e) {
+				d = { token: payload };
+			}
+		}
+		if (d && d.error) {
+			dagPush({ kind: "error", message: String(d.error) });
+			return;
+		}
+		if (!d || !d.token) {
+			dagPush({ kind: "error", message: "QR kod ile giriş tamamlanamadı." });
+			return;
+		}
+		try {
+			window.setCookie("token", d.token, "7");
+			if (d.refreshToken) window.setCookie("refreshToken", d.refreshToken, "90");
+		} catch (e) {
+			dagPush({ kind: "error", message: "oturum çerezi yazılamadı" });
+			return;
+		}
+		dagPush({ kind: "success", verified: d.verified !== false });
+	}
+
+	function dagHandle(session, text) {
+		if (session !== dag) return;
+		var msg;
+		try {
+			msg = JSON.parse(text);
+		} catch (e) {
+			dagPush({ kind: "error", message: "QR kod verisi okunamadı." });
+			return;
+		}
+		if (msg.type === "qr") {
+			dagPush({ kind: "qr", image: String(msg.data || "") });
+		} else if (msg.type === "error") {
+			dagPush({ kind: "error", message: String(msg.data || msg.error || "Bilinmeyen hata") });
+		} else if (msg.type === "success") {
+			dagComplete(msg.data);
+		}
+	}
+
+	function dagStart() {
+		var session = { controller: new AbortController(), queue: [] };
+		dag = session;
+
+		waitForGateway(40) // ~10 sn
+			.then(function (ready) {
+				if (session !== dag) return null;
+				if (!ready) {
+					dagPush({ kind: "error", message: "QR kod oluşturulamadı." });
+					return null;
+				}
+				// `window.fetch` — sitenin YAMALI olanı; Gateway-Token'ı o ekliyor.
+				return window.fetch(API_BASE + "/dag", { signal: session.controller.signal });
+			})
+			.then(function (r) {
+				if (!r) return null;
+				if (session !== dag) return null;
+				if (!r.ok || !r.body) {
+					dagPush({ kind: "error", message: "QR kod oluşturulamadı." });
+					return null;
+				}
+				var reader = r.body.getReader();
+				var decoder = new TextDecoder();
+				var feed = sseParser(function (text) {
+					dagHandle(session, text);
+				});
+				function pump() {
+					return reader.read().then(function (res) {
+						if (session !== dag) return null;
+						if (res.done) {
+							feed(decoder.decode());
+							return null;
+						}
+						feed(decoder.decode(res.value, { stream: true }));
+						return pump();
+					});
+				}
+				return pump();
+			})
+			.catch(function (e) {
+				// Akış bilerek iptal edildiyse (diyalog kapandı) hata değil.
+				if (session !== dag || (e && e.name === "AbortError")) return;
+				dagPush({ kind: "error", message: "QR kod akışı başlatılamadı." });
+			});
+
+		return session;
+	}
+
+	window.__OA_API_DAG_NEXT__ = function (requestId) {
+		function reply(payload) {
+			payload.id = requestId;
+			payload.stage = "done";
+			try {
+				window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+					event: EVENT,
+					payload: payload
+				});
+			} catch (e) {}
+		}
+
+		if (!dag) dagStart();
+		var session = dag;
+
+		var waited = 0;
+		(function poll() {
+			// Oturum arada durdurulduysa (diyalog kapandı) sessizce bitir.
+			if (session !== dag) {
+				reply({ kind: "idle" });
+				return;
+			}
+			if (session.queue.length) {
+				reply(session.queue.shift());
+				return;
+			}
+			if (waited >= 25000) {
+				// Rust tarafındaki bekleme 30 sn; ondan ÖNCE yanıt vermeliyiz ki
+				// arayüz zaman aşımı hatası görmesin, sadece döngüyü sürdürsün.
+				reply({ kind: "idle" });
+				return;
+			}
+			waited += 250;
+			setTimeout(poll, 250);
+		})();
+	};
+
+	window.__OA_API_DAG_STOP__ = function () {
+		dagStop();
+	};
+
+	window.__OA_API_LOGOUT__ = function (requestId) {
+		function reply(payload) {
+			payload.id = requestId;
+			try {
+				window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+					event: EVENT,
+					payload: payload
+				});
+			} catch (e) {}
+		}
+
+		var refreshToken = cookie("refreshToken");
+
+		try {
+			window.setCookie("token", "", -1);
+			window.setCookie("refreshToken", "", -1);
+		} catch (e) {
+			reply({ stage: "done", ok: false, message: "oturum çerezi silinemedi" });
+			return;
+		}
+
+		reply({ stage: "done", ok: true });
+
+		function finish() {
+			setTimeout(function () {
+				window.location.reload();
+			}, 50);
+		}
+
+		if (!refreshToken) {
+			finish();
+			return;
+		}
+
+		// Kısa bir geçit beklemesi (~2 sn): giriş yolundaki ~10 sn burada fazla
+		// olurdu, çünkü bu isteğin başarısı çıkışın gerçekleşmesi için şart değil.
+		waitForGateway(8)
+			.then(function (ready) {
+				if (!ready) return null;
+				return window.fetch(API_BASE + "/user/logout", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ refreshToken: refreshToken })
+				});
+			})
+			.catch(function () {
+				// Sunucu iptali başarısız oldu; yerel oturum yine de kapandı.
+			})
+			.then(finish);
+	};
 })();

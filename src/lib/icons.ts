@@ -29,6 +29,14 @@ import openExternal from "@fluentui/svg-icons/icons/open_24_regular.svg?raw";
 import save from "@fluentui/svg-icons/icons/save_24_regular.svg?raw";
 import update from "@fluentui/svg-icons/icons/arrow_sync_24_regular.svg?raw";
 import refresh from "@fluentui/svg-icons/icons/arrow_clockwise_24_regular.svg?raw";
+// Discord'un kendi logosu. Fluent setinde marka glifleri yok ve yerine konan
+// jenerik bir ikon (denenen: "topluluk") ayarın hangi servise ait olduğunu
+// anlatmıyordu. Bu SVG, OpenAnime-Desktops'ın Discord ayar arayüzünde
+// kullanılanın aynısı — iki uygulama aynı ikonu göstersin diye.
+//
+// `fill="currentColor"` içeride tanımlı, yani diğer ikonlar gibi --fds-*
+// metin rengini miras alıyor (bkz. `Icon.svelte`).
+import discord from "$lib/assets/discord.svg?raw";
 
 // Gelişmiş özelleştirme seçenekleri ikon tanımları.
 import sidebar from "@fluentui/svg-icons/icons/panel_left_24_regular.svg?raw";
@@ -180,7 +188,8 @@ export const ICONS = {
 	rename,
 	more,
 	person,
-	plus
+	plus,
+	discord
 } as const;
 
 export type IconName = keyof typeof ICONS;

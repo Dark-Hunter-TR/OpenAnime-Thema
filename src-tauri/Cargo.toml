@@ -41,4 +41,7 @@ base64 = "0.22"
 # Tauri zaten tokio üzerinde çalışıyor; doğrudan `use`layabilmek için burada
 # da listelenmesi gerekiyor.
 tokio = { version = "1", features = ["time", "sync"] }
+# Discord Rich Presence. Sürüm sabit: 0.2 serisinde `DiscordIpcClient::new`
+# imzası ve `Activity` builder'ı minor sürümler arasında değişti.
+discord-rich-presence = "0.2.5"
 
