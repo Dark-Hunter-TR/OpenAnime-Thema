@@ -80,12 +80,27 @@
 	   yaslı 2px tutamağı native scrollbar'da border-trick ile taklit
 	   ediyoruz: 12px şeritte border-left 6px (boşta) / 3px (hover),
 	   border-right sabit 4px — aradaki boşluk (`background-clip:
-	   padding-box`) sırasıyla 2px ve 5px'e çıkıyor, tıpkı sitede olduğu gibi. */
-	:global(*) {
-		scrollbar-width: thin;
-		scrollbar-color: var(--fds-control-strong-fill-default) transparent;
-	}
+	   padding-box`) sırasıyla 2px ve 5px'e çıkıyor, tıpkı sitede olduğu gibi.
 
+	   ## Burada `scrollbar-width` / `scrollbar-color` NEDEN YOK
+
+	   DİKKAT — buraya bir daha eklenmemeli. Chromium 121'den beri (bizim
+	   WebView2 151) standart `scrollbar-width`/`scrollbar-color` özellikleri
+	   destekleniyor ve ikisinden HERHANGİ BİRİ `auto` dışında bir değerle
+	   verildiğinde tarayıcı standart çizim yoluna geçip AŞAĞIDAKİ BÜTÜN
+	   `::-webkit-scrollbar-*` kurallarını tamamen yok sayıyor.
+
+	   Eskiden burada `scrollbar-width: thin` vardı ve tam olarak bu oluyordu:
+	   Windows 11'in native "Fluent" ince çubuğu çiziliyordu — ok düğmeleri ve
+	   şişkin yuvarlak tutamakla birlikte. `::-webkit-scrollbar-button`'a
+	   yazdığımız `display: none` hiç uygulanmadığı için oklar bir türlü
+	   kaybolmuyordu; CSS ne kadar değiştirilirse değiştirilsin sonuç aynıydı.
+
+	   İki API aynı anda kullanılamıyor: sitenin görünümünü birebir taklit eden
+	   border-trick yalnızca `::-webkit-scrollbar` yolunda mümkün olduğu için
+	   standart özellikleri hiç vermiyoruz. (Yalnızca çubuğu tamamen gizlemek
+	   isteyen yerler `scrollbar-width: none` kullanabilir — orada zaten
+	   çizilecek bir şey kalmıyor; bkz. `+page.svelte` -> `.combo-box-dropdown`.) */
 	:global(*::-webkit-scrollbar) {
 		width: 12px;
 		height: 12px;
