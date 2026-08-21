@@ -42,7 +42,7 @@ Bundle'larda şu fds-dışı token'lar da var: `--gray1`…`--gray12`
 `--os-*` (overlayscrollbars), `--normal/info/success/warning/error-*` (toast),
 `--glow-rotation`, `--lift`, `--mask-*`.
 
-**Sonuç:** Bunlar Svelte scoped-class hash'lerine bağlı olduğu için kararlı API
+**Sonuç:** Bunlar Svelte scoped-class hash'lerine bağlı olduğu için Stable API
 değil. Editörde varsayılan olarak **gösterilmeyecek**; en fazla "Gelişmiş
 (kırılgan)" başlığı altında, uyarı ile.
 

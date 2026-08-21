@@ -97,7 +97,7 @@ export const BUTTON_TOKENS: ColorTokenSpec[] = [
  * Standart butonun metin rengi için ayrılmış bir token YOK — site
  * `--fds-text-primary`'yi kullanıyor, onu ezmek tüm metinleri değiştirirdi.
  * Bu yüzden sadece bu biri kural düzeyinde ezilir. `.button`,
- * fluent-svelte'in kendi public class'ı (Svelte hash'i değil), kararlı.
+ * fluent-svelte'in kendi public class'ı (Svelte hash'i değil), Stable.
  */
 export const BUTTON_TEXT_SELECTOR = ".button";
 
