@@ -253,7 +253,7 @@
 	<div class="inputs">
 		<!-- svelte-ignore a11y-label-has-associated-control -->
 		<!-- Etiket, fluent bileşeninin ürettiği input'u sarıyor; `for` verecek
-		     kararlı bir id dışarıdan erişilebilir değil. -->
+		     Stable bir id dışarıdan erişilebilir değil. -->
 		<label class="hex-field">
 			<TextBlock variant="caption">Hex</TextBlock>
 			<TextBox bind:value={hex} {disabled} clearButton={false} placeholder="#ffffff" />

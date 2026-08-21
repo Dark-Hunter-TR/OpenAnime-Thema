@@ -11,11 +11,20 @@
  */
 
 import type { ThemeMode } from "$lib/theme";
+import type { UpdateChannel } from "$lib/updater";
 
 const KEY = "oa-editor-settings";
 
+/**
+ * Rich Presence'ın hangi ekranlarda görüneceği.
+ *
+ * `editor`: yalnızca bir tema açıkken (oluşturma ve düzenleme aynı ekran).
+ * Ana ekranda, Ayarlar'da ve Hakkında'da aktivite tamamen temizlenir.
+ */
+export type DiscordScope = "always" | "editor";
+
 export interface AppSettings {
-	version: 1;
+	version: 2;
 	/** Editör arayüzünün kendi teması — önizlemedeki siteyi etkilemez. */
 	appTheme: ThemeMode;
 	/** Bir proje açıldığında hangi düzenleme modunda başlanacağı. */
@@ -36,18 +45,37 @@ export interface AppSettings {
 	 */
 	updateSkipVersion: string;
 	/**
+	 * Hangi yayın kanalından güncelleme alınacağı.
+	 *
+	 * Kanallar depoda AYRI manifest dosyaları (bkz. `src-tauri/src/updater.rs`).
+	 * Stable kanaldaki bir kullanıcıya ön-sürüm ASLA sunulmaz; filtreleme
+	 * istemcide değil, hangi dosyanın okunduğunda gerçekleşiyor.
+	 *
+	 * Varsayılan `stable`: ön-sürümler bilerek seçilmesi gereken bir şey.
+	 */
+	updateChannel: UpdateChannel;
+	/**
 	 * Discord'da "OpenAnime Theme oynuyor" olarak görünülsün mü?
 	 *
-	 * Varsayılan KAPALI. Bu ayar, kullanıcının ne yaptığını üçüncü bir
-	 * tarafa (Discord'a) ve oradan da arkadaş listesine duyuruyor; düzenlenen
-	 * temanın adı da buna dâhil. Böyle bir yayını sormadan başlatmak doğru
-	 * olmaz — kullanıcı açıkça açmalı.
+	 * Ana anahtar. Kapalıyken aşağıdaki iki ayarın hiçbir etkisi yok ve Rust
+	 * tarafı mevcut aktiviteyi Discord'dan temizliyor.
 	 */
 	discordRpc: boolean;
+	/** Presence'ın görüneceği ekranlar. */
+	discordRpcScope: DiscordScope;
+	/**
+	 * Düzenlenen temanın ADI da paylaşılsın mı?
+	 *
+	 * Ayrı bir anahtar, çünkü paylaşılan bilginin hassasiyeti diğerlerinden
+	 * farklı: "tema düzenliyor" herkese açık bir etkinlik, temanın adı ise
+	 * kullanıcının yayımlamadığı bir çalışmayı ele verebilir. Kapalıyken
+	 * presence çalışmaya devam eder, yalnızca ad yerine genel bir satır yazar.
+	 */
+	discordRpcThemeName: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-	version: 1,
+	version: 2,
 	appTheme: "system",
 	defaultEditMode: "visual",
 	defaultViewport: "desktop",
@@ -55,18 +83,41 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	autoSaveOnLeave: true,
 	updateAutoCheck: true,
 	updateSkipVersion: "",
-	discordRpc: false
+	updateChannel: "stable",
+	discordRpc: true,
+	discordRpcScope: "always",
+	discordRpcThemeName: true
 };
 
 export function loadSettings(): AppSettings {
 	try {
 		const stored = localStorage.getItem(KEY);
 		if (!stored) return { ...DEFAULT_SETTINGS };
-		const parsed = JSON.parse(stored) as Partial<AppSettings>;
-		// Sürüm uymuyorsa varsayılana dön: eksik alanla açılan bir editör,
-		// hiç ayar olmamasından daha kötü davranırdı.
-		if (parsed.version !== 1) return { ...DEFAULT_SETTINGS };
-		return { ...DEFAULT_SETTINGS, ...parsed, version: 1 };
+		// `version` kasıtlı olarak GENİŞ: diskteki değer bizim tanıdığımız
+		// sürümlerden biri olmak zorunda değil (eski kurulum, elle düzenleme,
+		// ileri sürümden geri dönüş). Dar tipte bırakılsaydı aşağıdaki sürüm
+		// karşılaştırmaları derleyiciye göre "imkânsız" görünürdü.
+		const parsed = JSON.parse(stored) as Omit<Partial<AppSettings>, "version"> & {
+			version?: number;
+		};
+
+		// v1 -> v2: Discord ayarları eklendi ve eski tekil `discordRpc`
+		// varsayılanı KAPALI idi. Eski değeri taşımak yerine düşürüyoruz:
+		// v1'de bu alan hiçbir zaman kalıcı olamıyordu (her açılışta
+		// varsayılanların üzerine yazılıyordu, bkz. `+page.svelte` içindeki
+		// yükleme sırası), dolayısıyla saklanan `false` kullanıcının tercihi
+		// değil, o hatanın kalıntısı. Geri kalan alanlar korunuyor — sürümü
+		// tümden reddetmek kullanıcının tema/önizleme tercihlerini de
+		// silerdi.
+		if (parsed.version === 1) {
+			const { discordRpc: _legacy, ...rest } = parsed;
+			return { ...DEFAULT_SETTINGS, ...rest, version: 2 };
+		}
+
+		// Tanımadığımız sürüm: eksik alanla açılan bir editör, hiç ayar
+		// olmamasından daha kötü davranırdı.
+		if (parsed.version !== 2) return { ...DEFAULT_SETTINGS };
+		return { ...DEFAULT_SETTINGS, ...parsed, version: 2 };
 	} catch {
 		return { ...DEFAULT_SETTINGS };
 	}

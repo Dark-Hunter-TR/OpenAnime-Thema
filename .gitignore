@@ -14,3 +14,6 @@ vite.config.ts.timestamp-*
 # yerel bir kopya oluşturursanız bu satırlar onu bu depoda kilitli tutar.
 *.key
 *.key.pub
+
+# Ham yük dosyası; depoya girmemeli.
+video_base64_2.txt

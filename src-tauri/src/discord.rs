@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 /// kullanılırsa orada ne yazıyorsa o görünür.
 ///
 /// Bot, OAuth ya da doğrulama GEREKMEZ; boş bir application yeterli.
-const CLIENT_ID: &str = "";
+const CLIENT_ID: &str = "1540200148653703258";
 
 /// Portal → Rich Presence → Art Assets'e yüklenen görselin adı.
 ///
@@ -97,6 +97,12 @@ struct Presence {
     view: View,
     theme_name: String,
     edit_mode: EditMode,
+    /// Tema adı Discord'a yazılsın mı (ayardan geliyor).
+    ///
+    /// Adı frontend'de boşaltmak yerine ayrı bir bayrak taşıyoruz: iki durum
+    /// FARKLI metin üretiyor ("İsimsiz tema" ile "Tema düzenliyor") ve bu
+    /// ayrımı `describe` dışında bir yere dağıtmak istemiyoruz.
+    show_theme_name: bool,
 }
 
 impl Default for Presence {
@@ -105,6 +111,7 @@ impl Default for Presence {
             view: View::Home,
             theme_name: String::new(),
             edit_mode: EditMode::Visual,
+            show_theme_name: true,
         }
     }
 }
@@ -130,10 +137,11 @@ impl DiscordState {
     pub fn new() -> Self {
         let shared = Arc::new(Mutex::new(Shared {
             presence: Presence::default(),
-            // Açılışta kapalı: frontend ayarları `localStorage`'dan okuyup
-            // `discord_set_enabled` ile durumu bildirene kadar hiçbir şey
-            // gönderilmemeli. Varsayılan açık olsaydı, RPC'yi kapatmış bir
-            // kullanıcı her açılışta bir anlığına Discord'da görünürdü.
+            // Açılışta kapalı: frontend ayarları okuyup `discord_set_enabled`
+            // ile durumu bildirene kadar hiçbir şey gönderilmemeli.
+            // Varsayılan açık olsaydı, RPC'yi kapatmış bir kullanıcı her
+            // açılışta bir anlığına Discord'da görünürdü. Bildirim frontend'in
+            // ilk render'ında gidiyor; bekleme gözle görülür değil.
             enabled: false,
         }));
 
@@ -146,12 +154,19 @@ impl DiscordState {
     }
 
     /// Görünen durumu günceller. Frontend her ilgili değişimde çağırır.
-    pub fn update(&self, view: View, theme_name: String, edit_mode: EditMode) {
+    pub fn update(
+        &self,
+        view: View,
+        theme_name: String,
+        edit_mode: EditMode,
+        show_theme_name: bool,
+    ) {
         if let Ok(mut s) = self.shared.lock() {
             s.presence = Presence {
                 view,
                 theme_name,
                 edit_mode,
+                show_theme_name,
             };
         }
         let _ = self.tx.send(Signal::Wake);
@@ -319,7 +334,9 @@ fn describe(p: &Presence) -> (String, String) {
             // Discord `state` için 2-128 karakter istiyor ve sınır dışındaki
             // değerde aktivitenin TAMAMINI reddediyor. Proje adı uzunluğu
             // uygulamada kısıtlı olmadığı için iki ucu da burada kapatıyoruz.
-            let name = if name.chars().count() < 2 {
+            let name = if !p.show_theme_name {
+                "Tema düzenliyor".to_string()
+            } else if name.chars().count() < 2 {
                 "İsimsiz tema".to_string()
             } else {
                 truncate(name, 128)
@@ -356,8 +373,9 @@ pub fn discord_update(
     view: View,
     theme_name: String,
     edit_mode: EditMode,
+    show_theme_name: bool,
 ) {
-    state.update(view, theme_name, edit_mode);
+    state.update(view, theme_name, edit_mode, show_theme_name);
 }
 
 #[tauri::command]

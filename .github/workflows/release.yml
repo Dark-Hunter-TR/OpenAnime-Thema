@@ -1,21 +1,38 @@
 name: '🚀 Publish'
 
 # Tag push edildiğinde otomatik build + yayın, ya da GitHub Actions
-# arayüzünden elle tetiklenir. Yalnızca Windows: bkz. README.md ->
-# "Kurulum" — proje şu an için başka platformda test edilmedi.
+# arayüzünden elle tetiklenir. Yalnızca Windows: bkz. README.md -> "Kurulum".
+#
+# Kanal, tag'in ön-sürüm son ekinden türetilir:
+#   v1.0.0          -> stable
+#   v1.1.0-beta.1   -> beta
+#   v1.2.0-alpha.1  -> alpha
+#
+# Elle tetiklemede kanal ve baz sürüm seçilir; ön-sürüm sayacı (beta.1,
+# beta.2 …) otomatik hesaplanır, elle numara girmek gerekmez.
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
+      channel:
+        description: 'Yayın kanalı'
+        required: true
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - beta
+          - alpha
       version:
-        description: 'Sürüm (ör: 0.2.0)'
+        description: 'Sürüm (ör: 0.2.0) — ön-sürüm son ekini YAZMA, kanaldan üretilir'
         required: true
         type: string
 
 concurrency:
-  # Aynı tag için tek yayın; devam eden bir yayını yarıda kesme.
+  # Aynı tag için tek yayın; devam eden bir yayını yarıda kesme (release/tag
+  # silme ve manifest commit'i atomik olmayan işlemler).
   group: publish-${{ github.ref_name }}
   cancel-in-progress: false
 
@@ -29,39 +46,83 @@ env:
 
 jobs:
   # ────────────────────────────────────────────────────
-  # 1) Tag'i belirle
+  # 1) Sürüm + kanalı belirle
   # ────────────────────────────────────────────────────
   prepare:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      channel: ${{ steps.meta.outputs.channel }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
     steps:
-      - name: Sürümü tag'den hesapla
+      - name: Sürüm ve kanalı hesapla
         id: meta
         shell: bash
         env:
+          INPUT_CHANNEL: ${{ inputs.channel }}
           INPUT_VERSION: ${{ inputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$INPUT_VERSION" ]; then
+          # Ön-sürüm sayacı: v<baz>-<kanal>.<N> tag'lerinin en yüksek N'sini
+          # bulup N+1 döndürür. Eşleşen tag yoksa 1. Sayaç baz sürüm başına
+          # sıfırlanır (v0.2.0-alpha.1 -> v0.2.0-alpha.2; yeni baz 0.2.1 ->
+          # alpha.1).
+          next_prerelease_n() {
+            local base="$1" chan="$2" max=0 ref name n
+            while IFS= read -r ref; do
+              name="${ref#refs/tags/v}"
+              case "$name" in
+                "${base}-${chan}."*)
+                  n="${name##*.}"
+                  case "$n" in ''|*[!0-9]*) ;; *) [ "$n" -gt "$max" ] && max="$n" ;; esac
+                  ;;
+              esac
+            done < <(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v${base}-${chan}." \
+                       --jq '.[].ref' 2>/dev/null || true)
+            echo $((max + 1))
+          }
+
+          if [ -z "$INPUT_CHANNEL" ]; then
+            # push: tag zaten hazır
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v${INPUT_VERSION}"
+            # workflow_dispatch: kanal + baz sürümden tag üret
+            VERSION="$INPUT_VERSION"
+            case "$INPUT_CHANNEL" in
+              stable) TAG="v${VERSION}" ;;
+              beta)   TAG="v${VERSION}-beta.$(next_prerelease_n "$VERSION" beta)" ;;
+              alpha)  TAG="v${VERSION}-alpha.$(next_prerelease_n "$VERSION" alpha)" ;;
+            esac
           fi
           VERSION="${TAG#v}"
 
-          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Sürüm SemVer değil: $VERSION (beklenen: 1.2.3)"
+          # SemVer doğrulama — yalnızca -alpha.N / -beta.N ön-sürümleri.
+          # Serbest bırakılsaydı (ör. -rc.1) hiçbir kanala düşmeyen bir yayın
+          # oluşur, kimse güncelleme alamazdı.
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)\.[0-9]+)?$'; then
+            echo "::error::Sürüm biçimi geçersiz: $VERSION (beklenen: 1.2.3 | 1.2.3-alpha.1 | 1.2.3-beta.1)"
             exit 1
           fi
 
-          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          case "$VERSION" in
+            *-beta.*)  CHANNEL=beta ;;
+            *-alpha.*) CHANNEL=alpha ;;
+            *)         CHANNEL=stable ;;
+          esac
+
+          if [ "$CHANNEL" = "stable" ]; then PRE=false; else PRE=true; fi
+
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL"   >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRE"    >> "$GITHUB_OUTPUT"
 
           {
             echo "### 🚀 Yayın Bilgisi"
             echo "- **Tag:** \`$TAG\`"
             echo "- **Sürüm:** \`$VERSION\`"
+            echo "- **Kanal:** \`$CHANNEL\` (prerelease=$PRE)"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ────────────────────────────────────────────────────
@@ -119,37 +180,20 @@ jobs:
           restore-keys: |
             windows-bun-
 
-      # Sürüm alanlarını tag ile eşitle (repodaki değer ne olursa olsun tag kazanır)
+      # Sürüm alanları derlemeden ÖNCE yazılıyor: paketin, ikilinin ve updater
+      # manifestinin sürümü birbirine uymak zorunda. Depodaki değer ne olursa
+      # olsun tag kazanır.
       - name: Sürüm alanlarını tag ile eşitle
         shell: bash
-        env:
-          APP_VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          node -e '
-            const fs = require("fs");
-            const v = process.env.APP_VERSION;
-
-            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-            pkg.version = v;
-            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
-
-            const tauri = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
-            tauri.version = v;
-            fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(tauri, null, 2) + "\n");
-
-            let cargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
-            cargo = cargo.replace(/^version = ".*"/m, `version = "${v}"`);
-            fs.writeFileSync("src-tauri/Cargo.toml", cargo);
-
-            console.log("Sürüm alanları güncellendi:", v);
-          '
+        run: node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
 
       - name: Bağımlılıkları yükle
         run: bun install
 
-      # `createUpdaterArtifacts: true` zaten tauri.conf.json'da (bkz. bundle
-      # bölümü) — tauri-action imzalama secret'ları verildiğinde latest.json +
-      # .sig dosyalarını kendisi üretip release'e ekliyor.
+      # `createUpdaterArtifacts: true` zaten tauri.conf.json'da — tauri-action
+      # imzalama secret'ları verildiğinde latest.json + .sig dosyalarını
+      # üretip release'e ekliyor. Secret eksikse manifest hiç üretilmez ve
+      # aşağıdaki doğrulama işi BİLEREK patlar.
       - name: Derle & Yayınla (imzalı)
         uses: tauri-apps/tauri-action@v1
         env:
@@ -160,7 +204,7 @@ jobs:
           tagName: ${{ needs.prepare.outputs.tag }}
           releaseName: ${{ needs.prepare.outputs.tag }}
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
           args: --verbose
 
   # ────────────────────────────────────────────────────
@@ -204,3 +248,49 @@ jobs:
           gh release edit "${{ needs.prepare.outputs.tag }}" \
             --draft=false \
             --repo "${{ github.repository }}"
+
+  # ────────────────────────────────────────────────────
+  # 5) Kanal manifestini main'e commit'le
+  #
+  # Uygulama bu dosyaları okuyor: updater/latest-<kanal>.json
+  # (bkz. src-tauri/src/updater.rs). Yalnızca YAYINLANAN kanalın dosyası
+  # güncelleniyor — Stable kanalı seçen kullanıcının alpha/beta sürümü
+  # görmemesinin tek ve yeterli sebebi bu.
+  # ────────────────────────────────────────────────────
+  update-channel-manifest:
+    needs: [prepare, verify-manifest, publish-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Yayınlanan latest.json'u indir
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p updater
+          gh release download "${{ needs.prepare.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "latest.json" \
+            --output "updater/latest-${{ needs.prepare.outputs.channel }}.json" \
+            --clobber
+
+      - name: Değişikliği main'e commit'le
+        env:
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if [ -f "updater/latest-${CHANNEL}.json" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "updater/latest-${CHANNEL}.json"
+            git commit -m "chore(updater): ${CHANNEL} kanal manifestini ${TAG} olarak güncelle [skip ci]" \
+              || echo "Değişiklik yok, commit edilmedi."
+            git push origin main || { echo "::error::git push başarısız oldu"; exit 1; }
+          else
+            echo "::error::Kanal manifesti indirilemedi."
+            exit 1
+          fi

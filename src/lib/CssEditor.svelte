@@ -41,7 +41,7 @@
 	const siteVarOptions: Completion[] = SITE_VARS.map((name) => ({
 		label: name,
 		type: "variable",
-		detail: "site (kararlı API değil)"
+		detail: "site (Stable API değil)"
 	}));
 
 	const varOptions = [...tokenOptions, ...siteVarOptions];

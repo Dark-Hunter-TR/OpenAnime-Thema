@@ -9,10 +9,10 @@
 	import { Button, ProgressBar, TextBlock } from "fluent-svelte-extra";
 
 	import DialogShell from "$lib/DialogShell.svelte";
-	import { downloadAndInstallUpdate, type DownloadEvent, type Update } from "$lib/updater";
+	import { downloadAndInstallUpdate, type UpdateCheck, type UpdateProgress } from "$lib/updater";
 
 	export let open = false;
-	export let update: Update | null = null;
+	export let update: UpdateCheck | null = null;
 	/** Diyaloğu bu oturum için kapatır — sürümü ATLAMAZ, bir sonraki açılışta
 	 * yine sorulur. */
 	export let onClose: () => void;
@@ -35,8 +35,11 @@
 	// kalmalı, X/Escape/arka plan tıklaması hiçbir şey yapmamalı.
 	$: closable = status === "idle" || status === "error";
 
+	// Kanal adı da başlıkta: ön-sürüm kullanan biri neyi kurduğunu görmeli.
 	$: subtitle = update
-		? `Sürüm v${update.version}${update.date ? ` — ${formatDate(update.date)}` : ""}`
+		? `Sürüm v${update.version ?? "?"} · ${update.channelLabel}${
+				update.date ? ` — ${formatDate(update.date)}` : ""
+			}`
 		: "";
 
 	function formatDate(iso: string): string {
@@ -44,18 +47,25 @@
 		return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("tr-TR");
 	}
 
-	function handleEvent(event: DownloadEvent) {
-		if (event.event === "Started") {
+	// Toplama Rust tarafında yapılıyor (bkz. `updater.rs` -> `Progress`);
+	// burada yalnızca son duruma yazıyoruz. Eskiden baytları bu bileşen
+	// biriktiriyordu — indirme başka bir süreçte ilerlediği için o sayaç artık
+	// burada tutulamaz.
+	function handleProgress(progress: UpdateProgress) {
+		if (progress.status === "downloading") {
 			status = "downloading";
-			downloadedBytes = 0;
-			totalBytes = event.data.contentLength ?? 0;
-			percent = 0;
-		} else if (event.event === "Progress") {
-			downloadedBytes += event.data.chunkLength;
-			percent = totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)) : 0;
-		} else if (event.event === "Finished") {
+			downloadedBytes = progress.downloaded;
+			totalBytes = progress.total ?? 0;
+			percent = progress.percent;
+		} else if (progress.status === "installing") {
 			status = "installing";
 			percent = 100;
+		} else if (progress.status === "success") {
+			status = "success";
+			percent = 100;
+		} else if (progress.status === "error") {
+			status = "error";
+			errorMessage = progress.message ?? "Bilinmeyen hata.";
 		}
 	}
 
@@ -63,10 +73,10 @@
 		if (!update || status !== "idle") return;
 		status = "downloading";
 		try {
-			await downloadAndInstallUpdate(update, handleEvent);
+			await downloadAndInstallUpdate(handleProgress);
 			status = "success";
-			// `restart_app` normalde süreci burada zaten sonlandırıyor; bu satıra
-			// yalnızca (ör. hızlı art arda tıklamalarda) yarış durumunda ulaşılır.
+			// Rust tarafı kurulumdan sonra süreci yeniden başlatıyor; buraya
+			// yalnızca yeniden başlatma gecikirse ulaşılır.
 		} catch (e) {
 			status = "error";
 			errorMessage = String(e);

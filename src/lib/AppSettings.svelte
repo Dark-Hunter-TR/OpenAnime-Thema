@@ -71,8 +71,17 @@
 	/** Kontrol mantığı `+page.svelte`'de yaşıyor (Ayarlar'daki düğme ile
 	 * açılıştaki otomatik kontrol AYNI kodu paylaşıyor) — burası yalnızca
 	 * sonucu gösteriyor. */
-	export let updateCheckStatus: "idle" | "checking" | "up-to-date" | "error" = "idle";
+	export let updateCheckStatus:
+		| "idle"
+		| "checking"
+		| "up-to-date"
+		| "channel-empty"
+		| "error" = "idle";
 	export let updateCheckError = "";
+	/** Son kontrolün kanal adı; "bu kanalda sürüm yok" metni için. */
+	export let updateChannelLabel = "";
+	/** Kanal değiştiğinde: atlanan sürümü sıfırlayıp yeniden kontrol eder. */
+	export let onChannelChange: () => void;
 
 	const dispatch = createEventDispatcher<{ change: AppSettings }>();
 
@@ -110,6 +119,17 @@
 	$: routeSummary =
 		ROUTES.find((route) => route.path === settings.defaultPreviewPath)?.name ??
 		settings.defaultPreviewPath;
+	$: channelName =
+		settings.updateChannel === "beta"
+			? "Beta"
+			: settings.updateChannel === "alpha"
+				? "Alpha"
+				: "Stable";
+	$: discordSummary = !settings.discordRpc
+		? "Kapalı"
+		: settings.discordRpcScope === "editor"
+			? "Yalnızca tema düzenlerken görünüyorsun"
+			: "Discord'da görünüyorsun";
 </script>
 
 <div class="page">
@@ -145,9 +165,10 @@
 		</section>
 
 		<!-- --- Discord ---------------------------------------------------------- -->
-		<!-- Tek katlanan satır, gövdede tek anahtar. Hesap'ın hemen altında,
-		     çünkü ikisi de dış servislerle ilgili; depolama ve güncelleme gibi
-		     bakım ayarları aşağıda kalmalı. -->
+		<!-- Katlanan satır: ana anahtar ve onu özelleştiren iki ayar tek başlık
+		     altında (sitenin "Kişiselleştirilmiş öneriler" kalıbı). Hesap'ın
+		     hemen altında, çünkü ikisi de dış servislerle ilgili; depolama ve
+		     güncelleme gibi bakım ayarları aşağıda kalmalı. -->
 		<section class="expand-section">
 			<TextBlock variant="bodyStrong" class="title">Discord</TextBlock>
 
@@ -156,7 +177,7 @@
 				<div class="item-header">
 					<TextBlock variant="body">Rich Presence</TextBlock>
 					<TextBlock variant="caption" class="text-secondary">
-						{settings.discordRpc ? "Discord'da görünüyorsun" : "Kapalı"}
+						{discordSummary}
 					</TextBlock>
 				</div>
 
@@ -166,13 +187,58 @@
 							<div class="item-text">
 								<TextBlock variant="body">Ne yaptığımı Discord'da göster</TextBlock>
 								<TextBlock variant="caption" class="text-secondary">
-									Hangi bölümde olduğun ve düzenlediğin temanın adı Discord
-									profilinde görünür. Discord kapalıysa hiçbir şey olmaz.
+									Hangi bölümde olduğun Discord profilinde görünür. Discord
+									kapalıysa hiçbir şey olmaz.
 								</TextBlock>
 							</div>
 							<div class="expander-control">
 								<TextBlock variant="body">{onOff(settings.discordRpc)}</TextBlock>
 								<ToggleSwitch bind:checked={settings.discordRpc} />
+							</div>
+						</div>
+
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Ne zaman görünsün</TextBlock>
+								<TextBlock variant="caption" class="text-secondary">
+									"Sadece düzenlerken" seçilirse ana ekranda, ayarlarda ve
+									hakkında ekranında aktivite tamamen kaldırılır.
+								</TextBlock>
+							</div>
+							<div class="expander-control">
+								<SegmentedControl bind:value={settings.discordRpcScope}>
+									<SegmentedControlButton
+										value="always"
+										disabled={!settings.discordRpc}
+										on:click={() => (settings.discordRpcScope = "always")}
+									>
+										Her zaman
+									</SegmentedControlButton>
+									<SegmentedControlButton
+										value="editor"
+										disabled={!settings.discordRpc}
+										on:click={() => (settings.discordRpcScope = "editor")}
+									>
+										Sadece düzenlerken
+									</SegmentedControlButton>
+								</SegmentedControl>
+							</div>
+						</div>
+
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Tema adını göster</TextBlock>
+								<TextBlock variant="caption" class="text-secondary">
+									Kapalıyken düzenlediğin temanın adı yerine yalnızca "Tema
+									düzenliyor" yazar.
+								</TextBlock>
+							</div>
+							<div class="expander-control">
+								<TextBlock variant="body">{onOff(settings.discordRpcThemeName)}</TextBlock>
+								<ToggleSwitch
+									bind:checked={settings.discordRpcThemeName}
+									disabled={!settings.discordRpc}
+								/>
 							</div>
 						</div>
 					</div>
@@ -339,11 +405,13 @@
 						{#if updateCheckStatus === "checking"}
 							Kontrol ediliyor…
 						{:else if updateCheckStatus === "up-to-date"}
-							{appVersion || "Sürüm bilinmiyor"} — güncel
+							{appVersion || "Sürüm bilinmiyor"} — {channelName} kanalında güncel
+						{:else if updateCheckStatus === "channel-empty"}
+							{updateChannelLabel || channelName} kanalında yayınlanmış sürüm yok
 						{:else if updateCheckStatus === "error"}
 							Kontrol edilemedi: {updateCheckError}
 						{:else}
-							{appVersion || "Sürüm bilinmiyor"}
+							{appVersion || "Sürüm bilinmiyor"} · {channelName} kanalı
 						{/if}
 					</TextBlock>
 				</div>
@@ -360,6 +428,48 @@
 							<div class="expander-control">
 								<TextBlock variant="body">{onOff(settings.updateAutoCheck)}</TextBlock>
 								<ToggleSwitch bind:checked={settings.updateAutoCheck} />
+							</div>
+						</div>
+
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Yayın kanalı</TextBlock>
+								<TextBlock variant="caption" class="text-secondary">
+									Stable kanalda yalnızca tamamlanmış sürümler görünür; alpha ve
+									beta sürümleri buraya hiç düşmez. Ön-sürüm kanalları erken
+									özellikler içerir ama kararsız olabilir.
+								</TextBlock>
+							</div>
+							<div class="expander-control">
+								<SegmentedControl bind:value={settings.updateChannel}>
+									<SegmentedControlButton
+										value="stable"
+										on:click={() => {
+											settings.updateChannel = "stable";
+											onChannelChange();
+										}}
+									>
+										Stable
+									</SegmentedControlButton>
+									<SegmentedControlButton
+										value="beta"
+										on:click={() => {
+											settings.updateChannel = "beta";
+											onChannelChange();
+										}}
+									>
+										Beta
+									</SegmentedControlButton>
+									<SegmentedControlButton
+										value="alpha"
+										on:click={() => {
+											settings.updateChannel = "alpha";
+											onChannelChange();
+										}}
+									>
+										Alpha
+									</SegmentedControlButton>
+								</SegmentedControl>
 							</div>
 						</div>
 

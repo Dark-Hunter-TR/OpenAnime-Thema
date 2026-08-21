@@ -175,7 +175,7 @@ export const SITE_CLASSES: string[] = ${JSON.stringify(siteClasses, null, "\t")}
 /** openani.me'nin CSS'inde geçen id'ler. */
 export const SITE_IDS: string[] = ${JSON.stringify(siteIds, null, "\t")};
 
-/** Sitenin fds dışı custom property'leri. Kararlı API DEĞİL — çoğu
+/** Sitenin fds dışı custom property'leri. Stable API DEĞİL — çoğu
  *  Svelte scoped selector'lara bağlı ve her deploy'da değişebilir. */
 export const SITE_VARS: string[] = ${JSON.stringify(siteVars, null, "\t")};
 `;

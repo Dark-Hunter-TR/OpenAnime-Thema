@@ -24,6 +24,20 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
+# Kanal manifestini eklentiden ÖNCE kendimiz çekiyoruz (bkz. updater.rs ->
+# fetch_manifest): 404'ü ağ hatasından ayırt edebilmenin başka yolu yok.
+# Zaten tauri-plugin-updater üzerinden bağımlılık ağacında; rustls sürümü
+# onunla aynı olsun diye default-features kapalı.
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls-no-provider",
+    "charset",
+    "http2",
+    "system-proxy",
+] }
+# TLS sağlayıcısı: eklentinin kullandığının AYNISI (bkz. updater.rs ->
+# ensure_crypto_provider). `rustls-no-provider` sağlayıcıyı süreç düzeyinde
+# kurulmuş varsayıyor ve kurulmamışsa istemci hiç oluşturulamıyor.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # Yalnızca dosya seçme diyaloğu için. Okuma/yazmayı kendi komutlarımızla
 # yapıyoruz ki fs eklentisinin geniş scope yapılandırmasına ihtiyaç olmasın.
 tauri-plugin-dialog = "2"
@@ -31,11 +45,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
 base64 = "0.22"
-# HTTP istemcisi BİLEREK yok: api.openani.me'nin "Vanguard" geçidi
+# api.openani.me'ye BURADAN istek atılmıyor: "Vanguard" geçidi
 # `Gateway-Token` başlığı olmadan her isteği 401'liyor ve o başlık yalnızca
 # openani.me sayfasının kendi (wasm ile imzalanan) `fetch` yaması tarafından
 # eklenebiliyor. Hesap isteği bu yüzden önizleme webview'inin içinden
-# atılıyor (bkz. `preview_init.js` -> `__OA_ACCOUNT_FETCH__`).
+# atılıyor (bkz. `preview_init.js` -> `__OA_ACCOUNT_FETCH__`). Yukarıdaki
+# `reqwest` yalnızca güncelleme manifestini çekiyor — o adres GitHub'ın ham
+# dosya sunucusu, geçidin arkasında değil.
 #
 # `sync`: hesap köprüsünün oneshot kanalı. `time`: o kanalın zaman aşımı.
 # Tauri zaten tokio üzerinde çalışıyor; doğrudan `use`layabilmek için burada

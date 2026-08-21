@@ -23,7 +23,7 @@
 	import AppSettings from "$lib/AppSettings.svelte";
 	import LoginDialog from "$lib/LoginDialog.svelte";
 	import UpdateDialog from "$lib/UpdateDialog.svelte";
-	import { checkForUpdate, type Update } from "$lib/updater";
+	import { checkForUpdate, type UpdateCheck } from "$lib/updater";
 	import ColorField from "$lib/ColorField.svelte";
 	import ColorPicker from "$lib/ColorPicker.svelte";
 	import CssEditor from "$lib/CssEditor.svelte";
@@ -36,6 +36,7 @@
 	import SegmentedControl from "$lib/Segmented.svelte";
 	import TitleBar from "$lib/TitleBar.svelte";
 	import { setPresenceEnabled, updatePresence } from "$lib/discord";
+	import { installEasterEgg } from "$lib/easterEgg";
 	import type { NavId } from "$lib/nav";
 	import {
 		DEFAULT_SETTINGS,
@@ -148,7 +149,20 @@
 	// `$lib/nav.ts`'te.
 	let view: NavId = "home";
 
-	let settings: AppSettingsState = { ...DEFAULT_SETTINGS };
+	/**
+	 * Ayarlar diskten BİLDİRİMDE okunuyor, `onMount`'ta değil.
+	 *
+	 * Aşağıdaki "her değişimde kaydet" reaktif ifadesi bileşen ilklenirken de
+	 * bir kez çalışıyor ve bu, `onMount` geri çağrılarından ÖNCE oluyor.
+	 * Yükleme `onMount`'ta yapılsaydı sıra şöyle işlerdi: varsayılanlarla
+	 * başla -> varsayılanları `localStorage`'a YAZ -> sonra oku. Yani her
+	 * açılış kullanıcının kayıtlı ayarlarını siler ve geri varsayılanları
+	 * okurdu; ayarlar hiçbir zaman kalıcı olmazdı.
+	 *
+	 * `ssr = false` (bkz. `+layout.ts`) olduğu için `localStorage` bu noktada
+	 * her zaman var; sunucuda çalışan bir kod yolu yok.
+	 */
+	let settings: AppSettingsState = loadSettings();
 	let appVersion = "";
 	let projects: ProjectSummary[] = [];
 	let projectsPath = "";
@@ -902,11 +916,25 @@
 	// çünkü Ayarlar sayfasındaki "Şimdi kontrol et" düğmesi de AYNI kontrolü
 	// tetikleyebilmeli, sonucu ise hep buradaki tek `updateAvailable`/
 	// `updateDialogOpen` çiftine yazılıyor.
-	let updateAvailable: Update | null = null;
+	let updateAvailable: UpdateCheck | null = null;
 	let updateDialogOpen = false;
-	/** Ayarlar sayfasındaki elle kontrol düğmesinin durumu. */
-	let updateCheckStatus: "idle" | "checking" | "up-to-date" | "error" = "idle";
+	/**
+	 * Ayarlar sayfasındaki elle kontrol düğmesinin durumu.
+	 *
+	 * `channel-empty` ayrı bir durum: "güncelsin" ile "bu kanaldan hiç sürüm
+	 * çıkmamış" kullanıcı için aynı şey değil. Stable kanalı seçen biri, o
+	 * kanalda henüz yayın yoksa bunu açıkça görmeli — sessizce "güncel"
+	 * demek, ön-sürüm kullanan birine yanlış bilgi verirdi.
+	 */
+	let updateCheckStatus:
+		| "idle"
+		| "checking"
+		| "up-to-date"
+		| "channel-empty"
+		| "error" = "idle";
 	let updateCheckError = "";
+	/** Son kontrolün kanal adı ("Stable" / "Beta" / "Alpha"). */
+	let updateChannelLabel = "";
 
 	/**
 	 * @param manual Ayarlar sayfasından elle mi tetiklendi? Otomatik açılış
@@ -920,9 +948,21 @@
 			updateCheckError = "";
 		}
 		try {
-			const update = await checkForUpdate();
-			if (update && update.version !== settings.updateSkipVersion) {
-				updateAvailable = update;
+			// Elle tetiklenen kontrolde önbellek atlanıyor: düğmeye basan
+			// kullanıcı beş dakika boyunca aynı yanıtı almamalı.
+			const result = await checkForUpdate(settings.updateChannel, manual);
+			updateChannelLabel = result.channelLabel;
+
+			if (result.channelEmpty) {
+				updateAvailable = null;
+				if (manual) {
+					updateCheckStatus = "channel-empty";
+					setTimeout(() => {
+						if (updateCheckStatus === "channel-empty") updateCheckStatus = "idle";
+					}, 6000);
+				}
+			} else if (result.available && result.version !== settings.updateSkipVersion) {
+				updateAvailable = result;
 				updateDialogOpen = true;
 				updateCheckStatus = "idle";
 			} else if (manual) {
@@ -949,10 +989,22 @@
 
 	/** "Daha Sonra Hatırlat" — bu sürümü kalıcı olarak atlar. */
 	function skipUpdate() {
-		if (updateAvailable) {
+		if (updateAvailable?.version) {
 			settings = { ...settings, updateSkipVersion: updateAvailable.version };
 		}
 		updateDialogOpen = false;
+	}
+
+	/**
+	 * Kanal değiştiğinde durumu hemen tazeler.
+	 *
+	 * Atlanan sürüm de sıfırlanıyor: `updateSkipVersion` kanal bilmiyor ve
+	 * beta'da ertelenen bir sürüm numarası, Stable kanalda çıkan AYNI numaralı
+	 * sürümü de sessizce gizlerdi.
+	 */
+	function onChannelChange() {
+		settings = { ...settings, updateSkipVersion: "" };
+		void runUpdateCheck(true);
 	}
 
 	/**
@@ -1549,8 +1601,12 @@
 	}
 
 	// Ayarlar her değiştiğinde diske yaz ve arayüz temasını uygula.
+	//
+	// Tetikleyici `settings`'in YENİDEN ATANMASI; alan mutasyonu değil. Ayarlar
+	// sayfası zaten her değişimde `change` olayını yollayıp aşağıdaki
+	// işleyicide nesneyi yeniden atıyor; dolayısıyla buraya derin bir
+	// karşılaştırma (ör. `JSON.stringify`) koymanın bir etkisi olmaz.
 	$: if (settings) {
-		JSON.stringify(settings);
 		saveSettings(settings);
 	}
 	$: if (settings?.appTheme) {
@@ -1559,21 +1615,30 @@
 
 	// --- Discord Rich Presence ---------------------------------------------
 	//
+	// Kapsam kararı BURADA veriliyor, Rust'ta değil: "sadece düzenlerken"
+	// seçeneği `view`'a bakıyor ve `view` zaten burada yaşıyor. Rust tarafına
+	// taşımak, arayüz durumunun ikinci bir kopyasını oradaki duruma da
+	// yansıtmayı gerektirirdi.
+	$: presenceVisible =
+		settings.discordRpc &&
+		(settings.discordRpcScope === "always" || view === "editor");
+
 	// İki ayrı reaktif ifade, çünkü tetikleyicileri farklı: birincisi yalnızca
-	// ayar değiştiğinde, ikincisi kullanıcı uygulamada gezindikçe çalışıyor.
-	// Tek ifadede birleştirilseydi her sekme değişimi `discord_set_enabled`'ı
-	// da gereksiz yere çağırırdı.
-	$: setPresenceEnabled(settings?.discordRpc ?? false);
+	// görünürlük değiştiğinde, ikincisi kullanıcı uygulamada gezindikçe
+	// çalışıyor. Tek ifadede birleştirilseydi her sekme değişimi
+	// `discord_set_enabled`'ı da gereksiz yere çağırırdı.
+	$: setPresenceEnabled(presenceVisible);
 
 	// `projectName` editörde açık olan temanın adı; diğer görünümlerde
 	// Discord'a gönderilmiyor (bkz. `discord.rs` -> `describe`), ama burada
 	// filtrelemeye gerek yok — Rust tarafı görünüme göre zaten yok sayıyor.
-	$: if (settings?.discordRpc) {
-		updatePresence(view, projectName, editMode);
+	$: if (presenceVisible) {
+		updatePresence(view, projectName, editMode, settings.discordRpcThemeName);
 	}
 
 	onMount(() => {
-		settings = loadSettings();
+		// Ayarlar bildirimde yüklendi (yukarı bkz.); burada yalnızca onlara
+		// bağlı açılış durumu kuruluyor.
 		applyAppTheme(settings.appTheme);
 		viewport = settings.defaultViewport;
 		currentPath = settings.defaultPreviewPath;
@@ -1588,12 +1653,14 @@
 		checkForUpdatesOnStartup();
 
 		window.addEventListener("resize", syncBounds);
+		const removeEasterEgg = installEasterEgg();
 		push();
 
 		return () => {
 			slotObserver?.disconnect();
 			if (loginTimer) clearInterval(loginTimer);
 			window.removeEventListener("resize", syncBounds);
+			removeEasterEgg();
 		};
 	});
 </script>
@@ -1642,6 +1709,8 @@
 				onCheckForUpdates={() => runUpdateCheck(true)}
 				{updateCheckStatus}
 				{updateCheckError}
+				{updateChannelLabel}
+				{onChannelChange}
 			/>
 		{:else}
 			<!-- Editör: mevcut panel + önizleme yerleşimi olduğu gibi korunuyor. -->
