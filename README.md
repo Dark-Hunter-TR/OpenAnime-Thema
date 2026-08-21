@@ -88,8 +88,10 @@ Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranış�
 ### <img src="https://api.iconify.design/fluent/arrow-sync-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Uygulama İçi Güncelleyici
 
 - Açılıştan birkaç saniye sonra arka planda sessizce yeni sürüm kontrolü yapılır; bulunursa aynı diyalog şablonuyla (bkz. "Hakkında" penceresi) sürüm notları, indirme ilerlemesi ve "İndir ve Kur" / "Daha Sonra Hatırlat" seçenekleri gösterilir.
+- **Üç yayın kanalı:** *Stable*, *Beta*, *Alpha*. Her kanalın depoda AYRI bir manifesti var (`updater/latest-<kanal>.json`) ve yayın iş akışı yalnızca kendi kanalının dosyasını günceller. Stable kanalı seçen kullanıcıya ön-sürüm **hiçbir koşulda** sunulmaz — filtre istemcide değil, hangi dosyanın okunduğunda.
+- Seçili kanaldan henüz yayın yapılmamışsa bu ayrı bir durum olarak gösterilir ("… kanalında yayınlanmış sürüm yok"), "güncelsin" denmez.
 - Güncellemeler [`tauri-plugin-updater`](https://v2.tauri.app/plugin/updater/) ile **imzalı** olarak dağıtılır ve indirilmeden önce doğrulanır; kurulum bitince uygulama kendini yeniden başlatır.
-- Otomatik kontrol Ayarlar'dan kapatılabilir; aynı sayfadan elle de kontrol edilebilir.
+- Otomatik kontrol Ayarlar'dan kapatılabilir; kanal seçimi ve elle kontrol de aynı sayfada.
 
 ---
 
@@ -144,10 +146,20 @@ bun run tauri dev  # veya: npm run tauri dev
 ### 3. Yerel Paketleme (Build)
 
 ```bash
-bun run tauri build   # veya: npm run tauri build
+bun run build:test      # imzasız — "derleniyor mu" sorusunun cevabı
+bun run build:release   # imzalı; TAURI_SIGNING_PRIVATE_KEY şart
 ```
 
-Çıktı: `src-tauri/target/release/bundle/` altında (NSIS `.exe` + MSI).
+Çıktı: `src-tauri/target/release/bundle/nsis/` altında (özel NSIS kurulumu; MSI üretilmiyor).
+
+`build:release` imzalama anahtarı olmadan **"A public key has been found, but no private key"** ile durur: `tauri.conf.json` bir updater pubkey'i içerdiği ve `createUpdaterArtifacts` açık olduğu için bundler imza arar. Yerelde imzalı paket üretmek gerekirse:
+
+```bash
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/openanime-updater.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""   # anahtar parolasızsa boş
+```
+
+Yalnızca derlemenin geçtiğini görmek istiyorsanız `build:test` yeterli — o, updater artifact üretimini kapatan `src-tauri/tauri.test.conf.json` ile derler ve hiçbir anahtar istemez.
 
 ### 4. Diğer Komutlar
 
@@ -156,6 +168,7 @@ bun run tauri build   # veya: npm run tauri build
 | `bun run check` | Svelte + TypeScript tip kontrolü |
 | `bun test src` | Birim testleri çalıştırır |
 | `bun run catalog` | Kod editörünün otomatik tamamlama kataloğunu, `fluent-svelte-extra` ve sitenin canlı bundle'larından yeniden üretir |
+| `bun run set-version 0.2.0` | Sürümü `package.json`, `tauri.conf.json`, `Cargo.toml` ve `Cargo.lock`'ta tek seferde günceller (`0.2.0-alpha.1` / `0.2.0-beta.1` de kabul edilir) |
 | `cargo test` *(src-tauri içinde)* | Rust tarafındaki tema ayrıştırma/üretme testleri |
 
 ---
@@ -164,6 +177,18 @@ bun run tauri build   # veya: npm run tauri build
 
 `.github/workflows/release.yml`, bir `vX.Y.Z` tag'i push edildiğinde (ya da Actions arayüzünden elle) Windows derlemesini alıp GitHub Releases'e **imzalı** olarak yayınlar. `.github/workflows/test-build.yml` ise bir release oluşturmadan yalnızca derlemenin geçtiğini doğrulamak için elle tetiklenir.
 
+**Kanal, tag'in son ekinden türetilir:**
+
+| Tag | Kanal | GitHub'da |
+| --- | --- | --- |
+| `v0.2.0` | `stable` | normal release |
+| `v0.2.0-beta.1` | `beta` | pre-release |
+| `v0.2.0-alpha.1` | `alpha` | pre-release |
+
+Actions arayüzünden elle tetiklerken **kanal** ve **baz sürüm** (ör. `0.2.0`) seçilir; ön-sürüm sayacı (`beta.1`, `beta.2` …) mevcut tag'lere bakılarak otomatik artar, elle numara girilmez.
+
+İş akışının sırası: sürüm alanlarını yaz (`scripts/set-version.mjs`) → derle → taslak release → `latest.json` üretildi mi doğrula → taslağı yayınla → `updater/latest-<kanal>.json` dosyasını `main`'e commit'le. Son adım kanal ayrımının tamamı: uygulama o dosyayı okuyor.
+
 İmzalama için depo secret'larına ihtiyaç var (**Settings → Secrets and variables → Actions**):
 
 | Secret | Açıklama |
@@ -171,7 +196,9 @@ bun run tauri build   # veya: npm run tauri build
 | `TAURI_SIGNING_PRIVATE_KEY` | `tauri signer generate` ile üretilen private key dosyasının içeriği |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | O anahtarın parolası |
 
-Uygulama içindeki güncelleyici, sabit bir kanal manifesti değil doğrudan `.../releases/latest/download/latest.json` uç noktasını okur — yani `release.yml` tamamlandığında (taslak → canlı) bir sonraki açılışta otomatik olarak görünür.
+Uygulama içindeki güncelleyici `raw.githubusercontent.com/.../main/updater/latest-<kanal>.json` dosyasını okur (bkz. `src-tauri/src/updater.rs`). Yayın tamamlandığında manifest `main`'e commit'lendiği için güncelleme, yalnızca o kanaldaki kullanıcılara ve bir sonraki kontrolde görünür.
+
+> `tauri.conf.json` içindeki `pubkey` ile secret'taki private key AYNI çifte ait olmalı. Uyuşmazsa derleme sorunsuz geçer ama kullanıcı tarafında imza doğrulaması başarısız olur ve güncelleme kurulmaz.
 
 ---
 

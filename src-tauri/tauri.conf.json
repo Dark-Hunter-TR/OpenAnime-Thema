@@ -27,18 +27,33 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "template": "./nsis/installer.nsi",
+        "languages": [
+          "Turkish"
+        ],
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "nsis/images/header.bmp"
+      }
+    },
+    "resources": {
+      "resources/easter-egg.b64": "easter-egg.b64"
+    }
   },
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4NzUxNzlCRjlFNkY1QzkKUldUSjllYjVteGQxaUwzVlk2UEEyUzJ0UzEvcXMxdU15WEsyL2JHQnF0WHlaWnpTR3MrZ1p2N3cK",
       "endpoints": [
-        "https://github.com/Dark-Hunter-TR/OpenAnime-Thema/releases/latest/download/latest.json"
+        "https://raw.githubusercontent.com/Dark-Hunter-TR/OpenAnime-Thema/main/updater/latest-stable.json"
       ]
     }
   }

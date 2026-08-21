@@ -13,6 +13,10 @@ on:
         options:
           - debug
           - release
+      version:
+        description: 'Sürüm (ör: 0.2.0-alpha.1) — boş bırakılırsa depodaki sürüm kullanılır'
+        required: false
+        type: string
       upload_artifacts:
         description: 'Artifact olarak yükle'
         required: true
@@ -72,12 +76,23 @@ jobs:
           restore-keys: |
             windows-bun-
 
+      # Sürüm verildiyse derlemeden ÖNCE dosyalara yaz (release.yml ile aynı
+      # betik) — paketin, ikilinin ve manifestin sürümü ayrı düşmesin.
+      - name: Sürüm alanlarını ayarla
+        if: github.event.inputs.version != ''
+        shell: bash
+        run: node scripts/set-version.mjs "${{ github.event.inputs.version }}"
+
       - name: Bağımlılıkları yükle
         run: bun install
 
-      # Test build BİLEREK imzasız: bu iş akışı yalnızca "derleme geçiyor mu"
-      # sorusuna cevap veriyor, bir release yayınlamıyor. İmzalama
-      # secret'ları yalnızca release.yml'de kullanılıyor.
+      # Test build BİLEREK imzasız ve `tauri.test.conf.json` ile:
+      #
+      # `tauri.conf.json` içinde updater pubkey'i olduğu ve
+      # `createUpdaterArtifacts: true` verildiği için bundler imzalama anahtarı
+      # ARIYOR ve bulamayınca "A public key has been found, but no private key"
+      # ile duruyor. Bu iş akışı bir release yayınlamadığından imzalanacak bir
+      # şey de yok; override yalnızca updater artifact üretimini kapatıyor.
       - name: Derle
         uses: tauri-apps/tauri-action@v1
         env:
@@ -85,7 +100,7 @@ jobs:
         with:
           releaseDraft: false
           prerelease: false
-          args: ${{ github.event.inputs.build_mode == 'debug' && '--debug' || '' }} --verbose
+          args: --config src-tauri/tauri.test.conf.json ${{ github.event.inputs.build_mode == 'debug' && '--debug' || '' }} --verbose
 
       - name: Artifact'leri yükle
         if: github.event.inputs.upload_artifacts == 'true'

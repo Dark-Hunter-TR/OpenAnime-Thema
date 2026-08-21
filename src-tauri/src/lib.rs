@@ -1,7 +1,9 @@
 mod discord;
+mod easter_egg;
 mod preview;
 mod projects;
 mod theme;
+mod updater;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -618,6 +620,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(ThemeState::default())
         .manage(discord::DiscordState::default())
+        .manage(updater::UpdaterState::default())
+        .manage(easter_egg::Lock::default())
         .invoke_handler(tauri::generate_handler![
             apply_theme,
             apply_css_text,
@@ -644,7 +648,11 @@ pub fn run() {
             projects::delete_project,
             projects::rename_project,
             discord::discord_update,
-            discord::discord_set_enabled
+            discord::discord_set_enabled,
+            updater::updater_check,
+            updater::updater_download,
+            easter_egg::easter_egg_open,
+            easter_egg::easter_egg_close
         ])
         .on_window_event(|window, event| {
             // Pencere kapanırken Discord aktivitesini temizle.
@@ -654,7 +662,11 @@ pub fn run() {
             // uygulamayı kapattıktan sonra hâlâ "tema düzenliyor" görünmesi
             // yanlış olurdu. `CloseRequested` seçildi çünkü `Destroyed`
             // tetiklendiğinde thread'in temizliği bitirecek zamanı kalmıyor.
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.state::<easter_egg::Lock>().get() {
+                    api.prevent_close();
+                    return;
+                }
                 window.state::<discord::DiscordState>().shutdown();
             }
         })
