@@ -32,6 +32,8 @@ import back from "@fluentui/svg-icons/icons/arrow_left_24_regular.svg?raw";
 import save from "@fluentui/svg-icons/icons/save_24_regular.svg?raw";
 import update from "@fluentui/svg-icons/icons/arrow_sync_24_regular.svg?raw";
 import refresh from "@fluentui/svg-icons/icons/arrow_clockwise_24_regular.svg?raw";
+import chevronLeft from "@fluentui/svg-icons/icons/chevron_left_20_regular.svg?raw";
+import chevronRight from "@fluentui/svg-icons/icons/chevron_right_20_regular.svg?raw";
 // Discord'un kendi logosu. Fluent setinde marka glifleri yok ve yerine konan
 // jenerik bir ikon (denenen: "topluluk") ayarın hangi servise ait olduğunu
 // anlatmıyordu. Bu SVG, OpenAnime-Desktops'ın Discord ayar arayüzünde
@@ -148,6 +150,8 @@ export const ICONS = {
 	save,
 	update,
 	refresh,
+	chevronLeft,
+	chevronRight,
 	sidebar,
 	surface,
 	link,

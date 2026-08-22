@@ -31,6 +31,9 @@
 	export let onImport: (payload: { css: string; name: string; source: string }) => void;
 	export let onRename: (id: string, name: string) => void;
 	export let onDelete: (id: string) => void;
+	export let onSetCover: (id: string) => void;
+	export let onRemoveCover: (id: string) => void;
+	export let onExportCss: (id: string) => void;
 	export let onLogin: () => void;
 	/** openani.me oturumu açık mı (Rust, önizleme webview'inin çerez
 	 * kavanozundan okuyor — kullanıcı için görünmez bir ayrıntı). */
@@ -158,8 +161,12 @@
 								class="preview"
 								style="background: {SURFACE[project.mode] ?? SURFACE.dark}"
 							>
-								<span class="preview-bar" style="background: {accentCss(project.accent)}"></span>
-								<span class="preview-dot" style="background: {accentCss(project.accent)}"></span>
+								{#if project.coverImage}
+									<img class="preview-cover" src={project.coverImage} alt="" />
+								{:else}
+									<span class="preview-bar" style="background: {accentCss(project.accent)}"></span>
+									<span class="preview-dot" style="background: {accentCss(project.accent)}"></span>
+								{/if}
 							</span>
 							<span class="card-text">
 								<!-- Tarih/kaynak bilgisi üçüncül renkte: sitede de mod ve
@@ -188,6 +195,18 @@
 									<MenuFlyoutItem on:click={() => startRename(project)}>
 										Yeniden adlandır…
 									</MenuFlyoutItem>
+									<MenuFlyoutDivider />
+									<MenuFlyoutItem on:click={() => onExportCss(project.id)}>
+										CSS olarak kaydet…
+									</MenuFlyoutItem>
+									<MenuFlyoutItem on:click={() => onSetCover(project.id)}>
+										{project.coverImage ? "Kapak görselini değiştir…" : "Kapak görseli ekle…"}
+									</MenuFlyoutItem>
+									{#if project.coverImage}
+										<MenuFlyoutItem on:click={() => onRemoveCover(project.id)}>
+											Kapak görselini kaldır
+										</MenuFlyoutItem>
+									{/if}
 									<MenuFlyoutDivider />
 									<MenuFlyoutItem on:click={() => (deleting = project)}>Sil…</MenuFlyoutItem>
 								</svelte:fragment>
@@ -298,7 +317,12 @@
 		background-color: var(--fds-card-background-default);
 		border: 1px solid var(--fds-card-stroke-default);
 		box-shadow: var(--fds-card-shadow);
-		overflow: hidden;
+		/* `overflow: hidden` BİLEREK burada değil: `.card-menu`'nün açılır menüsü
+		   de bu kartın bir çocuğu ve menü kartın altına taşacak kadar uzunsa
+		   (CSS/kapak görseli eylemleri eklendikten sonra artık öyle) burada
+		   kesilip görünmez olurdu. Köşe yuvarlaklığının klibi yerine, ona
+		   gerçekten ihtiyacı olan tek şeye — `.card-main`'in hover dolgusuna —
+		   taşındı. */
 		transition: transform var(--fds-control-normal-duration)
 				var(--fds-control-fast-out-slow-in-easing),
 			box-shadow var(--fds-control-normal-duration) var(--fds-control-fast-out-slow-in-easing);
@@ -309,7 +333,9 @@
 		box-shadow: var(--fds-flyout-shadow);
 	}
 
-	/* Kartın tıklanabilir gövdesi. Zemini şeffaf: kartın kendi yüzeyi görünsün. */
+	/* Kartın tıklanabilir gövdesi. Zemini şeffaf: kartın kendi yüzeyi görünsün.
+	   Köşe yuvarlaklığı ve klip burada — `.card` yerine — çünkü kesilmesi
+	   gereken tek şey bu (hover dolgusu, kapak görseli); menü kartın DIŞINDA. */
 	.card-main {
 		appearance: none;
 		width: 100%;
@@ -318,6 +344,8 @@
 		gap: 10px;
 		padding: 12px;
 		border: none;
+		border-radius: var(--fds-overlay-corner-radius);
+		overflow: hidden;
 		background: none;
 		color: inherit;
 		font: inherit;
@@ -364,6 +392,13 @@
 		width: 44px;
 		height: 12px;
 		border-radius: var(--fds-control-corner-radius);
+	}
+
+	.preview-cover {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
 	}
 
 	.card-text {

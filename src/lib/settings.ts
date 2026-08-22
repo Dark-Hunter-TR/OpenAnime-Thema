@@ -98,6 +98,8 @@ export interface AppSettings {
 	 * presence çalışmaya devam eder, yalnızca ad yerine genel bir satır yazar.
 	 */
 	discordRpcThemeName: boolean;
+	/** Editördeki sol panelin genişliği (px). Kullanıcı ayraçtan sürükleyip ayarlar. */
+	panelWidth: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -114,8 +116,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	updateChannel: "stable",
 	discordRpc: true,
 	discordRpcScope: "always",
-	discordRpcThemeName: true
+	discordRpcThemeName: true,
+	panelWidth: 420
 };
+
+/** `panelWidth` için izin verilen aralık — sürüklerken ve yüklenirken uygulanır. */
+export const PANEL_WIDTH_MIN = 300;
+export const PANEL_WIDTH_MAX = 760;
+
+export function clampPanelWidth(width: number): number {
+	return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(width)));
+}
 
 export function loadSettings(): AppSettings {
 	try {

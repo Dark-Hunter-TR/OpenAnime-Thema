@@ -52,14 +52,27 @@ pub struct Project {
     /// Projenin kökeni (ör. içe aktarıldığı GitHub bağlantısı). Yalnız bilgi.
     #[serde(default)]
     pub source: Option<String>,
+
+    /// Ana ekrandaki kart için kullanıcının seçtiği kapak görseli (`data:` URI).
+    ///
+    /// Yoksa kart, temanın accent/mod renklerinden türeyen basit önizlemeyi
+    /// gösterir (bkz. `Launcher.svelte`). `read_image_data_uri`'nin aynı 3 MB
+    /// sınırına tabi — ayrı bir küçültme/thumbnail üretimi YOK, projede zaten
+    /// başka hiçbir gömülü görsel (logo, maskot, arkaplan) için de yok.
+    #[serde(default)]
+    pub cover_image: Option<String>,
 }
 
 /// Ana ekrandaki kart listesi için hafif özet.
 ///
 /// Projeler gömülü `data:` URI'leri (logo, maskot, arkaplan) yüzünden
-/// megabaytlarca olabiliyor. Liste ekranı yalnızca ad, tarih ve kart
-/// önizlemesi için gereken accent/mod bilgisini istiyor; tam gövdeleri
-/// belleğe almak açılışı gereksiz yere yavaşlatırdı.
+/// megabaytlarca olabiliyor. Liste ekranı yalnızca ad, tarih, kart
+/// önizlemesi için gereken accent/mod bilgisini ve VARSA kapak görselini
+/// istiyor — logo/maskot/arkaplan gibi düzenleme-zamanı görselleri hâlâ
+/// buraya girmiyor, tam proje gövdesi yalnızca `load_project` ile okunuyor.
+/// Kapak görseli özel: kartta GÖSTERİLMESİ gerektiği için istisna, ama aynı
+/// 3 MB sınırına tabi olduğundan (bkz. `Project::cover_image`) bir kullanıcı
+/// birden çok projeye kapak koyduğunda bile pratikte kabul edilebilir kalıyor.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSummary {
@@ -71,6 +84,7 @@ pub struct ProjectSummary {
     pub accent: Hsl,
     pub mode: ThemeMode,
     pub source: Option<String>,
+    pub cover_image: Option<String>,
 }
 
 /// Özet okurken kullanılan kısmi şema.
@@ -89,6 +103,8 @@ struct ProjectMeta {
     doc: MetaDoc,
     #[serde(default)]
     source: Option<String>,
+    #[serde(default)]
+    cover_image: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -179,6 +195,7 @@ pub fn list_projects(app: AppHandle) -> Result<Vec<ProjectSummary>, String> {
             accent: meta.doc.accent,
             mode: meta.doc.mode,
             source: meta.source,
+            cover_image: meta.cover_image,
         });
     }
 

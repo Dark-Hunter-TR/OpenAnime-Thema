@@ -42,6 +42,7 @@
 	import {
 		DEFAULT_SETTINGS,
 		applyAppTheme,
+		clampPanelWidth,
 		loadSettings,
 		saveSettings,
 		type AppSettings as AppSettingsState
@@ -66,6 +67,7 @@
 		buildAdvImports,
 		buildAdvRules,
 		buildAdvTokens,
+		ADV_TOKEN_KEYS,
 		type AdvState
 	} from "$lib/advancedBuild";
 	import { SITE_DEFAULTS, seedColor, seedColors } from "$lib/defaults";
@@ -75,6 +77,7 @@
 		applyTheme,
 		debounce,
 		defaultDoc,
+		previewClearData,
 		previewLoginState,
 		previewNavigate,
 		readCssFile,
@@ -129,6 +132,16 @@
 		"accent-dark-3"
 	];
 
+	// Kontrollerin üretebileceği HER token/kural anahtarı — bir bölüm
+	// kapatıldığında `doc.tokenOverrides`/`doc.ruleOverrides`'tan bunlar
+	// silinip ÖYLE yeniden birleştiriliyor (bkz. aşağıdaki reaktif blok).
+	// `KNOWN_SELECTORS` zaten bu amaçla bakımı yapılan tam liste (advanced.ts);
+	// burada yalnız temel (Gelişmiş dışı) buton metni selector'ı ekleniyor.
+	const TOKEN_KEY_UNIVERSE = [...ADV_TOKEN_KEYS, ...HOVER_TOKENS, ...BUTTON_TOKENS]
+		.map((t) => (typeof t === "string" ? t : t.token))
+		.concat(DURATION_TOKENS.map((t) => t.token), EASING_TOKEN);
+	const RULE_KEY_UNIVERSE = [...KNOWN_SELECTORS, BUTTON_TEXT_SELECTOR];
+
 	// --- Tek state -----------------------------------------------------------
 	// Görsel kontroller ve kod editörü aynı `doc` üzerinde çalışır:
 	//   görsel değişiklik -> apply_theme    -> css -> editöre yazılır
@@ -144,6 +157,34 @@
 
 	let editMode: "visual" | "code" = "visual";
 	let editorCategory: "colors" | "shape" | "motion" | "media" | "components" | "advanced" = "colors";
+
+	// Kategori şeridi (Renkler/Şekil/…/Gelişmiş) panel dar olunca sığmıyor;
+	// oklar şeridi DOĞRUDAN kaydırıyor — seçili sekmeyi görünüre kaydırmıyor.
+	let categoryStripEl: HTMLDivElement | undefined;
+	let categoryScrollLeft = false;
+	let categoryScrollRight = false;
+
+	function updateCategoryScrollState() {
+		const el = categoryStripEl;
+		if (!el) return;
+		categoryScrollLeft = el.scrollLeft > 1;
+		categoryScrollRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+	}
+
+	function scrollCategoryStrip(direction: 1 | -1) {
+		categoryStripEl?.scrollBy({ left: direction * 160, behavior: "smooth" });
+	}
+
+	let categoryStripObserver: ResizeObserver | null = null;
+	$: if (categoryStripEl && !categoryStripObserver) {
+		categoryStripObserver = new ResizeObserver(updateCategoryScrollState);
+		categoryStripObserver.observe(categoryStripEl);
+		categoryStripEl.addEventListener("scroll", updateCategoryScrollState, { passive: true });
+		updateCategoryScrollState();
+	} else if (!categoryStripEl && categoryStripObserver) {
+		categoryStripObserver.disconnect();
+		categoryStripObserver = null;
+	}
 
 	// --- Üst düzey görünüm ---------------------------------------------------
 	// Uygulama artık doğrudan editöre düşmüyor: açılışta ana ekran gelir.
@@ -165,6 +206,38 @@
 	 * her zaman var; sunucuda çalışan bir kod yolu yok.
 	 */
 	let settings: AppSettingsState = loadSettings();
+
+	// Sol panelin genişliği — ayraçtan sürüklenip `settings.panelWidth`e
+	// yazılıyor. Önizleme webview'i BAŞKA bir mekanizmadan (previewSlot'u
+	// izleyen ResizeObserver -> syncBounds) kendiliğinden yeniden konumlanıyor;
+	// burada webview'e dair hiçbir şey yapmıyoruz.
+	let panelWidth = clampPanelWidth(settings.panelWidth);
+	let panelResizing = false;
+
+	function startPanelResize(e: PointerEvent) {
+		e.preventDefault();
+		panelResizing = true;
+		const startX = e.clientX;
+		const startWidth = panelWidth;
+
+		function onMove(ev: PointerEvent) {
+			panelWidth = clampPanelWidth(startWidth + (ev.clientX - startX));
+		}
+		function onUp() {
+			panelResizing = false;
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			settings = { ...settings, panelWidth };
+		}
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+	}
+
+	function resetPanelWidth() {
+		panelWidth = DEFAULT_SETTINGS.panelWidth;
+		settings = { ...settings, panelWidth };
+	}
+
 	let appVersion = "";
 	let projects: ProjectSummary[] = [];
 	let projectsPath = "";
@@ -174,6 +247,8 @@
 	let projectId = "";
 	let projectName = "Yeni tema";
 	let projectSource: string | null = null;
+	/** Ana ekrandaki kart için kapak görseli — yalnızca ana ekranın "⋮" menüsünden değişir. */
+	let coverImage: string | null = null;
 	/**
 	 * Editör'de o an gösterilecek bir tema var mı.
 	 *
@@ -343,17 +418,23 @@
 			lastRuleMap = nextRules;
 			adopting = false;
 		} else {
+			// Basit spread ({...eski, ...yeni}) eksik bir anahtarı SİLMEZ; bir
+			// bölüm kapatılınca o anahtar `tokenMap`/`ruleMap`'ten kaybolur ama
+			// spread eski değeri kalıcı bırakırdı ("kapat" hiçbir şey yapmamış
+			// gibi görünürdü). Bu yüzden önce kontrollü anahtarların TAMAMI
+			// siliniyor, sonra güncel harita üstüne yazılıyor — kapalı bir
+			// bölümün anahtarı yeniden eklenmez, açık olanınki eklenir.
 			if (nextTokens !== lastTokenMap) {
 				lastTokenMap = nextTokens;
-				doc.tokenOverrides = { ...doc.tokenOverrides, ...tokenMap };
+				const cleaned = { ...doc.tokenOverrides };
+				for (const key of TOKEN_KEY_UNIVERSE) delete cleaned[key];
+				doc.tokenOverrides = { ...cleaned, ...tokenMap };
 			}
 			if (nextRules !== lastRuleMap) {
 				lastRuleMap = nextRules;
-				const merged = { ...doc.ruleOverrides, ...ruleMap };
-				if (!adv.logo.textOn) delete merged[LOGO_TEXT_SELECTOR];
-				if (!adv.logo.imageOn) delete merged[LOGO_IMAGE_SELECTOR];
-				if (!adv.bg.on) delete merged[`${BG_BODY_SELECTOR}::before`];
-				doc.ruleOverrides = merged;
+				const cleaned = { ...doc.ruleOverrides };
+				for (const key of RULE_KEY_UNIVERSE) delete cleaned[key];
+				doc.ruleOverrides = { ...cleaned, ...ruleMap };
 			}
 		}
 	}
@@ -690,6 +771,25 @@
 
 	function onRouteSelect(event: CustomEvent<{ value: string }>) {
 		go(event.detail.value);
+	}
+
+	let clearingPreviewData = false;
+	let previewClearedStatus = "";
+
+	/** Önizlemenin çerezlerini ve site verisini sıfırlar (bkz. `previewClearData`). */
+	async function clearPreviewData() {
+		clearingPreviewData = true;
+		previewClearedStatus = "";
+		try {
+			await previewClearData();
+			currentPath = settings.defaultPreviewPath;
+			await refreshLoginState();
+			previewClearedStatus = "Temizlendi.";
+		} catch (e) {
+			error = String(e);
+		} finally {
+			clearingPreviewData = false;
+		}
 	}
 
 	// --- Görsel seçici (Tauri dosya sistemi) --------------------------------
@@ -1185,6 +1285,7 @@
 		projectId = project.id;
 		projectName = project.name;
 		projectSource = project.source;
+		coverImage = project.coverImage;
 		externalPath = project.externalPath;
 		externalDirty = false;
 		cssText = project.cssText;
@@ -1234,6 +1335,7 @@
 		projectId = "";
 		projectName = "Yeni tema";
 		projectSource = null;
+		coverImage = null;
 		externalPath = null;
 		externalDirty = false;
 		fileStatus = "";
@@ -1290,7 +1392,8 @@
 				ui: uiState,
 				cssText,
 				externalPath,
-				source: projectSource
+				source: projectSource,
+				coverImage
 			});
 			projectId = saved.id;
 			projectName = saved.name;
@@ -1478,6 +1581,51 @@
 		}
 	}
 
+	/** Ana ekrandaki "⋮" menüsünden: kapak görseli seç/değiştir. */
+	async function handleSetCover(id: string) {
+		try {
+			const dataUri = await pickImage();
+			if (!dataUri) return;
+			const project = await loadProject(id);
+			project.coverImage = dataUri;
+			await saveProject(project);
+			if (id === projectId) coverImage = dataUri;
+			await refreshProjects();
+		} catch (e) {
+			error = String(e);
+		}
+	}
+
+	/** Ana ekrandaki "⋮" menüsünden: kapak görselini kaldırıp varsayılan önizlemeye dön. */
+	async function handleRemoveCover(id: string) {
+		try {
+			const project = await loadProject(id);
+			project.coverImage = null;
+			await saveProject(project);
+			if (id === projectId) coverImage = null;
+			await refreshProjects();
+		} catch (e) {
+			error = String(e);
+		}
+	}
+
+	/** Ana ekrandaki "⋮" menüsünden: projeyi editöre girmeden tek seferlik .css olarak dışa aktarır. */
+	async function handleExportCss(id: string) {
+		try {
+			const project = await loadProject(id);
+			const chosen = await saveDialog({
+				defaultPath: `${project.name}.css`,
+				filters: [{ name: "CSS", extensions: ["css"] }]
+			});
+			if (typeof chosen !== "string") return;
+			await writeCssFile(chosen, project.cssText);
+			projectStatus = `"${chosen}" kaydedildi.`;
+			error = "";
+		} catch (e) {
+			error = String(e);
+		}
+	}
+
 	/**
 	 * GitHub'dan çekilen CSS'i içe aktarır.
 	 *
@@ -1500,6 +1648,7 @@
 			projectId = "";
 			projectName = payload.name;
 			projectSource = payload.source;
+			coverImage = null;
 			externalPath = null;
 			externalDirty = false;
 			editMode = "visual";
@@ -1530,6 +1679,7 @@
 		projectId = "";
 		projectName = externalPath.split(/[\\/]/).pop()?.replace(/\.css$/i, "") || "Harici tema";
 		projectSource = null;
+		coverImage = null;
 		editMode = settings.defaultEditMode;
 		viewport = settings.defaultViewport;
 		currentPath = settings.defaultPreviewPath;
@@ -1807,6 +1957,9 @@
 				onImport={handleImport}
 				onRename={handleRename}
 				onDelete={handleDelete}
+				onSetCover={handleSetCover}
+				onRemoveCover={handleRemoveCover}
+				onExportCss={handleExportCss}
 				onLogin={openLoginDialog}
 				{loggedIn}
 				onOpenAccount={openAccountSettings}
@@ -1836,7 +1989,7 @@
 			/>
 		{:else}
 			<!-- Editör: mevcut panel + önizleme yerleşimi olduğu gibi korunuyor. -->
-			<div class="shell">
+			<div class="shell" style="grid-template-columns: {panelWidth}px 6px 1fr">
 	<div class="panel">
 		<header>
 			<div class="row-between">
@@ -1858,6 +2011,19 @@
 					</span>
 				</Button>
 				<Button on:click={() => askName()}>Farklı adla kaydet…</Button>
+				<Tooltip text="Temayı ayrı bir .css dosyası olarak diske yazar — proje kaydından bağımsız.">
+					<Button
+						on:click={async () => {
+							await saveExternal(true);
+							// `fileStatus`'un kendi StatusBar'ı yalnızca Kod modunda görünür;
+							// Görsel'den tetiklendiğinde onay burada gösterilsin diye
+							// `projectStatus`'a da yansıtıyoruz (ikisi de her modda görünür).
+							if (fileStatus) projectStatus = fileStatus;
+						}}
+					>
+						<Icon name="code" size={14} /><span class="gap">CSS olarak kaydet…</span>
+					</Button>
+				</Tooltip>
 				<Button variant="hyperlink" on:click={() => navigate("home")}>Ana ekran</Button>
 			</div>
 
@@ -1898,7 +2064,15 @@
 
 		{#if editMode === "visual"}
 			<div class="category-switch">
-				<SegmentedControl bind:value={editorCategory}>
+				<IconButton
+					class="category-scroll"
+					aria-label="Sola kaydır"
+					disabled={!categoryScrollLeft}
+					on:click={() => scrollCategoryStrip(-1)}
+				>
+					<Icon name="chevronLeft" size={14} />
+				</IconButton>
+				<SegmentedControl bind:value={editorCategory} bind:containerElement={categoryStripEl}>
 					<SegmentedControlButton value="colors" on:click={() => (editorCategory = "colors")}>
 						Renkler
 					</SegmentedControlButton>
@@ -1918,6 +2092,14 @@
 						Gelişmiş
 					</SegmentedControlButton>
 				</SegmentedControl>
+				<IconButton
+					class="category-scroll"
+					aria-label="Sağa kaydır"
+					disabled={!categoryScrollRight}
+					on:click={() => scrollCategoryStrip(1)}
+				>
+					<Icon name="chevronRight" size={14} />
+				</IconButton>
 			</div>
 
 			<div class="sections">
@@ -2185,10 +2367,34 @@
 				<TextBlock variant="caption">
 					Parametreli sayfalar için: {PARAM_ROUTES.join("  ·  ")}
 				</TextBlock>
+
+				<Tooltip
+					text="Önizlemedeki çerezleri (oturum dâhil) ve site verilerini (localStorage, önbellek) siler, sayfayı baştan yükler. Temanız etkilenmez."
+				>
+					<Button on:click={clearPreviewData} disabled={clearingPreviewData}>
+						<Icon name="reset" size={14} /><span class="gap">
+							{clearingPreviewData ? "Temizleniyor…" : "Çerezleri ve verileri sıfırla"}
+						</span>
+					</Button>
+				</Tooltip>
+				{#if previewClearedStatus}
+					<TextBlock variant="caption" class="text-secondary">{previewClearedStatus}</TextBlock>
+				{/if}
 			</Section>
 
 		</div>
 	</div>
+
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div
+		class="panel-resize-handle"
+		class:dragging={panelResizing}
+		role="separator"
+		aria-orientation="vertical"
+		aria-label="Paneli yeniden boyutlandır"
+		on:pointerdown={startPanelResize}
+		on:dblclick={resetPanelWidth}
+	></div>
 
 	<div class="preview-area">
 		<!--
@@ -2312,7 +2518,16 @@
 		<Button
 			on:click={() => {
 				namingOpen = false;
+				// `askName` bir yolculuk sırasında (ör. "Ana ekran"a dönerken) adı
+				// sormak için açılmış olabilir — o zaman `afterSave` bekleyen
+				// navigasyonu taşır. Yalnızca diyaloğu kapatıp kullanıcıyı editörde
+				// TAKILI bırakmak yerine (autoSaveOnLeave açıkken tekrar "Ana
+				// ekran"a basınca aynı diyalog sonsuza dek yeniden açılırdı), o
+				// navigasyonu kaydetmeden çalıştırıyoruz: "Vazgeç" gerçekten
+				// vazgeçsin.
+				const next = afterSave;
 				afterSave = null;
+				next?.();
 			}}
 		>
 			Vazgeç
@@ -2420,9 +2635,36 @@
 	   çubuğu satırı artık burada değil (yukarı, .app'e taşındı). */
 	.shell {
 		display: grid;
-		grid-template-columns: 420px 1fr;
+		/* `grid-template-columns` satır içi stille (bkz. yukarısı) `panelWidth`e
+		   bağlanıyor; buradaki değer yalnızca stil uygulanmadan önceki karede
+		   görünecek geçici bir varsayılan. */
+		grid-template-columns: 420px 6px 1fr;
 		min-height: 0;
 		overflow: hidden;
+	}
+
+	/* Panel/önizleme arasındaki sürüklenebilir ayraç. Genişlik `panelWidth`e
+	   yazılıyor; webview'in yeniden konumlanması zaten `previewSlot`'u izleyen
+	   `ResizeObserver`'dan (syncBounds) kendiliğinden geliyor, burada ekstra
+	   bir şey tetiklemeye gerek yok. */
+	.panel-resize-handle {
+		position: relative;
+		cursor: col-resize;
+		background-color: var(--fds-divider-stroke-default);
+		touch-action: none;
+	}
+
+	.panel-resize-handle::after {
+		/* Görünen çizgi 1px kalsın ama tıklama/sürükleme hedefi tüm 6px'lik
+		   sütunu kaplasın — 1px'e nişan almak zorunda bırakmıyoruz. */
+		content: "";
+		position: absolute;
+		inset: 0 -3px;
+	}
+
+	.panel-resize-handle:hover,
+	.panel-resize-handle.dragging {
+		background-color: var(--fds-accent-default);
 	}
 
 	.panel {
@@ -2510,19 +2752,37 @@
 
 	.category-switch {
 		padding: 0 1rem 0.5rem 1rem;
+		display: flex;
+		align-items: center;
+		gap: 4px;
 	}
 
+	/* Panel daraldığında altı sekme sığmayabiliyor; şerit kendi içinde yatay
+	   kaydırılıyor (kaydırma çubuğu gizli, oklar `scrollCategoryStrip`'i
+	   çağırıyor). Öğeler artık eşit genişliğe SIKIŞTIRILMIYOR — doğal
+	   genişlikleriyle taşıp kaydırılabilir oluyorlar. */
 	.category-switch :global(.segmented-control) {
-		width: 100%;
+		flex: 1 1 auto;
 		display: flex;
+		min-width: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+
+	.category-switch :global(.segmented-control::-webkit-scrollbar) {
+		display: none;
 	}
 
 	.category-switch :global(.segmented-control-item),
 	.category-switch :global(.segmented-control-button),
 	.category-switch :global(button) {
-		flex: 1 1 0%;
-		text-align: center;
-		justify-content: center;
+		flex: 0 0 auto;
+		white-space: nowrap;
+	}
+
+	.category-switch :global(.category-scroll) {
+		flex: 0 0 auto;
 	}
 
 	.row {

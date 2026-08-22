@@ -600,3 +600,23 @@ export function buildAdvRules(adv: AdvState): Record<string, string> {
 
 	return map;
 }
+
+/**
+ * Bu modülün üretebileceği HER token anahtarı — bölümün açık/kapalı olması
+ * önemsiz. `+page.svelte`, bir bölüm kapatıldığında `doc.tokenOverrides`
+ * içindeki bu anahtarları silip ÖYLE yeniden birleştiriyor; aksi hâlde
+ * `{...eski, ...yeni}` gibi bir SPREAD, `buildAdvTokens`'ın artık üretmediği
+ * (yani kapatılmış bir bölüme ait) anahtarı silmez, eski değer kalıcı yapışıp
+ * kalır ve "kapat" görsel olarak hiçbir şey yapmamış gibi görünür.
+ */
+export const ADV_TOKEN_KEYS: string[] = [
+	...TEXT_TOKENS,
+	...CARD_TOKENS,
+	...SURFACE_TOKENS,
+	...LINK_TOKENS,
+	...SYSTEM_TOKENS
+]
+	.map((s) => s.token)
+	.concat(SIDEBAR_SELECTED_TOKEN.token)
+	.concat(FONT_TOKENS.map((t) => t.token))
+	.concat(FONT_SIZE_TOKENS.map((t) => t.token));

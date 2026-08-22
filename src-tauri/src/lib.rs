@@ -150,6 +150,16 @@ fn preview_navigate(app: AppHandle, url: String) -> Result<(), String> {
     preview::navigate(&app, &url)
 }
 
+/// Önizlemenin çerezlerini ve site verilerini (localStorage, önbellek…) siler.
+///
+/// `async` olması `preview_login_state`'teki gerekçeyle aynı: WebView2'nin
+/// gezinti verisi API'leri Windows'ta senkron bir komuttan çağrılırsa
+/// tıkanabiliyor.
+#[tauri::command]
+async fn preview_clear_data(app: AppHandle) -> Result<(), String> {
+    preview::clear_data(&app).await
+}
+
 /// Ana ekran / ayarlar görünümünde önizlemeyi gizler.
 #[tauri::command]
 fn set_preview_visible(app: AppHandle, visible: bool) -> Result<(), String> {
@@ -675,6 +685,7 @@ pub fn run() {
             read_image_data_uri,
             set_preview_bounds,
             preview_navigate,
+            preview_clear_data,
             set_preview_visible,
             preview_login_state,
             account_login,

@@ -182,6 +182,12 @@ pub fn create(app: &AppHandle, doc: &ThemeDoc) -> Result<(), Box<dyn std::error:
     let url: url::Url = SITE_URL.parse()?;
 
     let builder = WebviewBuilder::new(PREVIEW_LABEL, WebviewUrl::External(url))
+        // Ctrl+tekerlek (ve Ctrl +/-) ile yakınlaştırma. Windows'ta doğrudan
+        // WebView2'nin kendi zoom denetimi; macOS/Linux'ta wry'nin kendiliğinden
+        // enjekte ettiği bir polyfill. İkisi de inşa anında (Rust tarafında)
+        // ayarlanıyor — çağrılabilir bir komut olmadığı için capability/izin
+        // sistemine hiç girmiyor.
+        .zoom_hotkeys_enabled(true)
         .initialization_script(init_script(doc))
         // Sayfa geçişlerinde (ana sayfa -> anime detay -> oynatıcı) temayı
         // yeniden basar. initialization_script her navigasyonda çalışsa da
@@ -405,6 +411,30 @@ pub fn navigate(app: &AppHandle, url: &str) -> Result<(), String> {
         webview.navigate(parsed).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Önizlemenin çerezlerini, localStorage/sessionStorage'ını ve önbelleğini
+/// tamamen siler, ardından siteyi baştan yükler.
+///
+/// wry/WebView2 tek bir "tüm gezinti verisini temizle" komutu dışında bir
+/// şey sunmuyor — yalnızca çerezleri ya da yalnızca localStorage'ı silen ayrı
+/// bir API yok. Dolayısıyla "çerezleri temizle" ile "site verilerini
+/// temizle" burada KASITLI OLARAK aynı işlem: ayrı iki düğme koymak var
+/// olmayan bir ayrımı varmış gibi göstermek olurdu.
+///
+/// Silme sonrası yeniden yükleme şart: depolama silinse de sayfanın o anda
+/// bellekte çalışan JS'i (ör. "giriş yapılmış" durumu) kendiliğinden
+/// güncellenmez. Yeniden yükleme aynı zamanda `initialization_script`'i
+/// tetikleyip güncel temayı tazeden basar — kullanıcının teması KAYBOLMAZ,
+/// yalnızca sitenin kendi verisi (oturum, site-taraflı localStorage) silinir.
+pub async fn clear_data(app: &AppHandle) -> Result<(), String> {
+    let Some(webview) = app.get_webview(PREVIEW_LABEL) else {
+        return Ok(());
+    };
+    webview
+        .clear_all_browsing_data()
+        .map_err(|e| format!("veriler temizlenemedi: {e}"))?;
+    navigate(app, SITE_URL)
 }
 
 #[cfg(test)]

@@ -70,6 +70,16 @@ export const setPreviewBounds = (x: number, y: number, width: number, height: nu
 
 export const previewNavigate = (url: string) => invoke<void>("preview_navigate", { url });
 
+/**
+ * Önizlemenin çerezlerini ve site verilerini (localStorage, önbellek…) silip
+ * siteyi baştan yükler.
+ *
+ * WebView2/wry yalnızca ayrım gözetmeyen tek bir "tüm gezinti verisini
+ * temizle" komutu sunuyor — "yalnızca çerezler" ile "yalnızca site verisi"
+ * ayrı işlemler DEĞİL (bkz. `preview.rs` -> `clear_data`).
+ */
+export const previewClearData = () => invoke<void>("preview_clear_data");
+
 export interface LoginState {
 	loggedIn: boolean;
 }

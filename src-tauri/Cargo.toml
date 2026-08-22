@@ -1,6 +1,6 @@
 [package]
 name = "openanime-theme"
-version = "0.1.0"
+version = "1.0.0"
 description = "OpenAnime Tema Editörü"
 authors = ["Dark_Hunter"]
 edition = "2021"

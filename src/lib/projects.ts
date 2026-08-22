@@ -29,6 +29,8 @@ export interface ProjectSummary {
 	accent: [number, number, number];
 	mode: ThemeMode;
 	source: string | null;
+	/** Kullanıcının seçtiği kapak görseli (`data:` URI). Yoksa `null`. */
+	coverImage: string | null;
 }
 
 /**
@@ -76,6 +78,8 @@ export interface Project {
 	externalPath: string | null;
 	/** İçe aktarıldıysa kaynağı (GitHub bağlantısı). */
 	source: string | null;
+	/** Ana ekrandaki kart için kullanıcının seçtiği kapak görseli (`data:` URI). */
+	coverImage: string | null;
 }
 
 /** Kaydedilmemiş yeni proje için taslak. Kimliği Rust üretir. */
