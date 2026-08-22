@@ -149,22 +149,54 @@ jobs:
         run: |
           # Taslak release'ler `releases/tags/<tag>` ile BULUNAMIYOR (o uç nokta
           # yalnızca yayınlanmışlara bakıyor); bu yüzden liste üzerinden arıyoruz.
+          #
+          # Ama liste uç noktası ANINDA TUTARLI DEĞİL: yeni açılan bir taslak
+          # birkaç saniye boyunca listede görünmeyebiliyor. Release'i açıp hemen
+          # ardından listede aramak tam da bu yüzden "oluşturulamadı" diye
+          # düşüyordu — release aslında oluşmuştu.
+          #
+          # Çözüm: id'yi aramıyoruz, release'i oluşturan POST'un YANITINDAN
+          # okuyoruz (`gh release create` yalnızca URL basıyor, id vermiyor;
+          # bu yüzden REST uç noktasını doğrudan çağırıyoruz). Listeye artık
+          # sadece "bu tag için taslak zaten var mı" kontrolü ve paralel bir işin
+          # release'i önce açtığı yarış durumu için başvuruyoruz.
           find_id() {
-            gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
-              --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -1
+            # `head -1` YOK: pipefail altında SIGPIPE (141) adımı sessizce
+            # düşürüyor. Tüm çıktıyı alıp ilk satırı bash içinde ayıklıyoruz.
+            local out
+            out="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+                   | jq -r --arg tag "$TAG" '[.[][] | select(.tag_name == $tag) | .id] | .[0] // empty')" \
+              || return 1
+            printf '%s' "${out%%$'\n'*}"
           }
 
-          ID="$(find_id)"
+          # Yukarıdaki gecikmeye karşı artan beklemeyle yeniden dener.
+          find_id_retry() {
+            local id delay
+            for delay in 0 2 4 8 15; do
+              [ "$delay" -eq 0 ] || sleep "$delay"
+              id="$(find_id || true)"
+              if [ -n "$id" ]; then printf '%s' "$id"; return 0; fi
+            done
+          }
+
+          ID="$(find_id || true)"
+
           if [ -z "$ID" ]; then
-            PRE_FLAG=""
-            [ "$PRERELEASE" = "true" ] && PRE_FLAG="--prerelease"
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" \
-              --draft $PRE_FLAG \
-              --target "$GITHUB_SHA" \
-              --notes "Otomatik yayın — varlıklar yükleniyor…"
-            ID="$(find_id)"
+            if RESPONSE="$(gh api -X POST "repos/${GITHUB_REPOSITORY}/releases" \
+                 -f "tag_name=$TAG" \
+                 -f "name=$TAG" \
+                 -f "target_commitish=$GITHUB_SHA" \
+                 -F draft=true \
+                 -F "prerelease=$PRERELEASE" \
+                 -f 'body=Otomatik yayın — varlıklar yükleniyor…')"; then
+              ID="$(printf '%s' "$RESPONSE" | jq -r '.id // empty')"
+            else
+              # 422 already_exists: aynı tag için release başka bir yerde
+              # açılmış olabilir. Listede belirmesini bekleyip yeniden ara.
+              echo "Release oluşturma isteği reddedildi, mevcut release aranıyor…"
+              ID="$(find_id_retry)"
+            fi
           fi
 
           if [ -z "$ID" ]; then
