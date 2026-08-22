@@ -612,8 +612,52 @@ fn restart_app(app: AppHandle) {
     app.restart();
 }
 
+/// Linux'ta WebKitGTK'yı, uygulamanın çalışabildiği bilinen yapılandırmaya
+/// sabitler.
+///
+/// İkisi de GTK/WebKit BAŞLAMADAN önce, yani `tauri::Builder` kurulmadan önce
+/// yazılmak zorunda; sonrasında ayarlamanın hiçbir etkisi olmuyor. Kullanıcı
+/// değişkeni kendisi verdiyse dokunulmuyor — teşhis için ikisini de elle
+/// değiştirebilmek gerekiyor.
+#[cfg(target_os = "linux")]
+fn init_linux_env() {
+    // 1) Önizleme child webview'i X11 GEREKTİRİYOR.
+    //
+    // `Window::add_child` Linux'ta wry'nin `new_as_child` yoluna düşüyor ve o
+    // yol pencere tutamacının `RawWindowHandle::Xlib` olmasını şart koşuyor
+    // (wry -> `webkitgtk::InnerWebView::new_x11`): child webview aslında ana
+    // pencerenin X penceresi altına `XCreateSimpleWindow` ile açılan AYRI bir X
+    // penceresi. Wayland tutamacıyla çağrıldığında `UnsupportedWindowHandle`
+    // dönüyor; `preview::create` hata veriyor ve `setup` içinde olduğu için
+    // uygulama hiç açılmıyor.
+    //
+    // Uygulamanın tüm önizleme mimarisi o child webview'e dayandığından Wayland
+    // oturumunda XWayland'e düşmek tek seçenek. Wayland'de native çalışmak,
+    // wry child webview'i destekleyene kadar mümkün değil.
+    if std::env::var_os("GDK_BACKEND").is_none() {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+
+    // 2) WebKitGTK'nın DMA-BUF renderer'ı NVIDIA'nın tescilli sürücüsünde ve
+    //    bazı sanal/uzak masaüstlerinde webview'i boş bırakıyor: sayfa
+    //    yükleniyor, JS çalışıyor, ama hiçbir kare çizilmiyor. Önizlemede bu
+    //    "openani.me hiç açılmıyor" gibi görünüyor. Tauri'nin Linux grafik
+    //    sorunları rehberinin de önerdiği değişken bu.
+    //
+    //    Daha eski WebKitGTK sürümlerinde aynı belirtinin karşılığı
+    //    `WEBKIT_DISABLE_COMPOSITING_MODE=1`; burada varsayılan olarak
+    //    ayarlanmıyor çünkü hızlandırılmış kompozisyonu tamamen kapatıyor.
+    //    Gerekirse kullanıcı elle verebilir.
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    init_linux_env();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

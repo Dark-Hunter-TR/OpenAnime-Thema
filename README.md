@@ -127,6 +127,8 @@ Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranış�
 > **macOS notu:** paketler Apple tarafından imzalanıp notarize edilmediği için ilk açılışta Gatekeeper uyarı verir. Uygulamaya sağ tıklayıp **Aç** demek ya da *Sistem Ayarları → Gizlilik ve Güvenlik* altından izin vermek yeterli. Güncelleme imzası (minisign) bundan bağımsız ve her platformda doğrulanıyor.
 >
 > **Linux notu:** `.deb` için WebKitGTK 4.1 gerekir (`libwebkit2gtk-4.1-0`). AppImage'ı çalıştırmadan önce `chmod +x` vermeyi unutmayın.
+>
+> Canlı önizleme, ana pencerenin içine eklenen ayrı bir webview üzerinde çalışıyor ve bu, Linux'ta **X11 gerektiriyor** — Wayland oturumlarında uygulama kendini otomatik olarak XWayland'e (`GDK_BACKEND=x11`) alır. Ayrıca WebKitGTK'nın DMA-BUF renderer'ı bazı sürücülerde (özellikle NVIDIA'nın tescilli sürücüsü) webview'i boş bırakıyor; bu yüzden `WEBKIT_DISABLE_DMABUF_RENDERER=1` varsayılan olarak ayarlanıyor. İki değişkeni de kendiniz verirseniz uygulama üzerine yazmaz — sorun giderirken `WEBKIT_DISABLE_COMPOSITING_MODE=1` de denenebilir.
 
 ---
 
