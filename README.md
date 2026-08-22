@@ -13,7 +13,7 @@
 ![Svelte](https://img.shields.io/badge/Svelte-4-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 
-![Windows](https://img.shields.io/badge/Windows-Geliştirildi%20%26%20Test%20Edildi-0078D4?style=for-the-badge&logo=windows&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-Destekleniyor-0078D4?style=for-the-badge&logo=windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-AppImage%20%2B%20deb-FCC624?style=for-the-badge&logo=linux&logoColor=black)
 
@@ -120,7 +120,7 @@ Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranış�
 
 | Platform | Paket | Not |
 | --- | --- | --- |
-| **Windows** (x64) | `.exe` (NSIS kurulumu) | DESTEKLENIYOR |
+| **Windows** (x64) | `.exe` (NSIS kurulumu) | Geliştirildi ve test edildi |
 | **macOS** (Apple Silicon + Intel) | `.dmg` / `.app` | Tek `universal` paket ikisini de kapsar |
 | **Linux** (x64) | `.AppImage`, `.deb` | AppImage medya çerçevesiyle birlikte paketlenir |
 
