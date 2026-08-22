@@ -58,11 +58,19 @@ while IFS=$'\t' read -r name api_url; do
     continue
   fi
 
-  url="$(printf '%s' "$assets" | jq -r --arg n "$base" '.[] | select(.name == $n) | .url')"
-  if [ -z "$url" ] || [ "$url" = "null" ]; then
+  exists="$(printf '%s' "$assets" | jq -r --arg n "$base" 'any(.[]; .name == $n)')"
+  if [ "$exists" != "true" ]; then
     echo "::warning::$name için paket dosyası ($base) release'de yok, atlandı"
     continue
   fi
+
+  # Asset nesnesinin `.url` alanı (browser_download_url), release henüz TASLAK
+  # iken GitHub'ın verdiği geçici "untagged-<hash>" yoluyla dolu geliyor; bu
+  # job publish-release'den ÖNCE çalıştığı için o geçici adres manifeste
+  # yazılırsa release yayınlandıktan sonra 404 veriyor (asıl adres $TAG'e
+  # kayıyor). Bu yüzden adresi API'den almak yerine $TAG'den deterministik
+  # kuruyoruz — release yayınlandığında bu adres zaten doğru olan adres.
+  url="https://github.com/${REPO}/releases/download/${TAG}/${base}"
 
   # İmza tek satırlık base64; olası satır sonlarını kırpıyoruz.
   signature="$(gh api -H "Accept: application/octet-stream" "$api_url" | tr -d '\r\n')"
