@@ -8,7 +8,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn varsayilan_taban_kutuphane_rampasini_uretir() {
+    fn default_base_produces_library_ramp() {
         let expected = [
             "191, 98%, 80%",
             "199, 99%, 69%",
@@ -25,13 +25,13 @@ mod tests {
     }
 
     #[test]
-    fn varsayilan_dokuman_token_yazmaz() {
+    fn default_document_writes_no_tokens() {
         let css = ThemeDoc::default().emit_css();
         assert!(!css.contains("--fds-"), "beklenmedik token: {css}");
     }
 
     #[test]
-    fn degistirilmis_accent_yedi_basamak_yazar() {
+    fn changed_accent_writes_seven_steps() {
         let doc = ThemeDoc {
             accent: [280.0, 80.0, 50.0],
             ..Default::default()
@@ -44,21 +44,21 @@ mod tests {
     }
 
     #[test]
-    fn hue_360_etrafinda_sarmalanir() {
+    fn hue_wraps_around_360() {
         let ramp = derive_ramp([355.0, 100.0, 42.0]);
         assert_eq!(num(ramp[6][0]), "15");
         assert_eq!(num(ramp[0][0]), "340");
     }
 
     #[test]
-    fn doygunluk_ve_isik_kirpilir() {
+    fn saturation_and_lightness_are_clamped() {
         let ramp = derive_ramp([200.0, 1.0, 95.0]);
         assert!(ramp.iter().all(|c| c[1] >= 0.0 && c[1] <= 100.0));
         assert!(ramp.iter().all(|c| c[2] >= 0.0 && c[2] <= 100.0));
     }
 
     #[test]
-    fn emit_parse_turu_dokumani_korur() {
+    fn emit_parse_roundtrip_preserves_document() {
         let original = ThemeDoc {
             accent: [280.0, 72.5, 48.0],
             mode: ThemeMode::Light,
@@ -78,7 +78,7 @@ mod tests {
     }
 
     #[test]
-    fn token_ve_kural_ezmeleri_tur_atlatir() {
+    fn token_and_rule_overrides_roundtrip() {
         let mut token_overrides = BTreeMap::new();
         token_overrides.insert("--fds-subtle-fill-secondary".into(), "hsla(0, 0%, 100%, 8%)".into());
         token_overrides.insert("--fds-control-normal-duration".into(), "500ms".into());
@@ -109,7 +109,7 @@ mod tests {
     }
 
     #[test]
-    fn import_satirlari_en_basta_kalir_ve_tur_atlar() {
+    fn import_lines_stay_at_top_and_roundtrip() {
         let doc = ThemeDoc {
             imports: vec![
                 "https://fonts.googleapis.com/css2?family=Inter&display=swap".into(),
@@ -131,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn logo_data_uri_bozulmaz() {
+    fn logo_data_uri_is_not_corrupted() {
         let uri = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=";
         let mut rule_overrides = BTreeMap::new();
         rule_overrides.insert(".topbar .logo img".into(), format!("content: url(\"{uri}\");"));
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn turetilmis_accent_basamaklari_haritaya_sizmaz() {
+    fn derived_accent_steps_do_not_leak_into_map() {
         let doc = ThemeDoc {
             accent: [10.0, 50.0, 50.0],
             ..Default::default()
@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn varsayilan_dokuman_da_tur_atlatir() {
+    fn default_document_also_roundtrips() {
         let original = ThemeDoc::default();
         let round = parse_css(&original.emit_css(), &[], &original);
         assert_eq!(round.accent, DEFAULT_ACCENT);
@@ -168,7 +168,7 @@ mod tests {
     }
 
     #[test]
-    fn elle_duzenlenen_accent_kontrole_yansir() {
+    fn manually_edited_accent_reflects_in_control() {
         let doc = ThemeDoc {
             accent: [206.0, 100.0, 42.0],
             ..Default::default()
@@ -181,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn isaretleyici_yoksa_kontroller_korunur_metin_ham_sayilir() {
+    fn without_marker_controls_preserved_text_is_raw() {
         let current = ThemeDoc {
             accent: [300.0, 50.0, 50.0],
             control_corner_radius: Some(9.0),
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn blok_disina_yazilan_css_korunur() {
+    fn css_written_outside_block_is_preserved() {
         let doc = ThemeDoc::default();
         let text = format!("h1 {{ color: red; }}\n{TOKENS_OPEN}\n{TOKENS_CLOSE}\nh2 {{ color: blue; }}");
         let parsed = parse_css(&text, &[], &doc);
@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn yaricap_ve_ham_css_yazilir() {
+    fn radius_and_raw_css_are_written() {
         let doc = ThemeDoc {
             control_corner_radius: Some(12.0),
             overlay_corner_radius: Some(20.0),
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn yabanci_css_token_ve_kurallari_kontrollere_esler() {
+    fn foreign_css_maps_tokens_and_rules_to_controls() {
         let doc = ThemeDoc::default();
         let css = r#"
 :root {
@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn eslenemeyen_kurallar_ham_cssde_korunur() {
+    fn unmapped_rules_preserved_in_raw_css() {
         let doc = ThemeDoc::default();
         let css = r#"
 :root { --fds-accent-base: 200, 50%, 50%; }
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn karisik_root_blogu_bolunmez() {
+    fn mixed_root_block_is_not_split() {
         let doc = ThemeDoc::default();
         let css = ":root { --fds-accent-base: 12, 88%, 55%; color-scheme: dark; }";
         let parsed = parse_foreign_css(css, &known(), &doc);
@@ -293,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn turetilmis_accent_basamaklari_haritaya_girmez() {
+    fn derived_accent_steps_do_not_enter_map() {
         let doc = ThemeDoc::default();
         let css = ":root { --fds-accent-base: 280, 70%, 50%; --fds-accent-dark-1: 1, 2%, 3%; }";
         let parsed = parse_foreign_css(css, &known(), &doc);
@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn yorum_ve_string_icindeki_parantezler_kural_sinirini_kaydirmaz() {
+    fn braces_in_comments_and_strings_do_not_shift_rule_boundary() {
         let doc = ThemeDoc::default();
         let css = r#"
 /* eski kural: .x { color: red } */
@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn import_satirlari_ayrilir() {
+    fn import_lines_are_separated() {
         let doc = ThemeDoc::default();
         let css = "@import url(\"https://fonts.googleapis.com/css2?family=Inter\");\n\
                    :root { --fds-accent-base: 5, 5%, 5%; }";
@@ -332,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn ice_aktarilan_tema_uretilen_csste_eksiksiz_kalir() {
+    fn imported_theme_remains_intact_in_emitted_css() {
         let doc = ThemeDoc::default();
         let css = r#"
 :root { --fds-accent-base: 340, 82%, 52%; --fds-text-primary: #fff; }
@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_css_davranisi_degismedi() {
+    fn parse_css_behavior_unchanged() {
         let doc = ThemeDoc::default();
         let text = ".ozel { color: red; }";
         let parsed = parse_css(text, &[], &doc);
@@ -359,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn esnek_renk_ve_yaricap_ayristirma_calisir() {
+    fn lenient_color_and_radius_parsing_works() {
         let hex_color = parse_color_to_hsl("#3b82f6").expect("hex parsed");
         assert!((hex_color[0] - 217.0).abs() < 2.0);
 
@@ -372,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn jenerik_css_degiskenleri_kontrollere_eslenir() {
+    fn generic_css_variables_map_to_controls() {
         let doc = ThemeDoc::default();
         let css = r#"
 :root {
@@ -387,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn harici_topluluk_temasi_midnight_ayristirilir() {
+    fn external_community_theme_midnight_is_parsed() {
         let doc = ThemeDoc::default();
         let css = r#"
 /* Midnight OpenAnime Theme */
@@ -421,7 +421,7 @@ body {
     }
 
     #[test]
-    fn url_degiskenleri_ve_gorsel_yollari_tokenlara_girer() {
+    fn url_variables_and_image_paths_become_tokens() {
         let doc = ThemeDoc::default();
         let css = r#"
 :root {

@@ -138,7 +138,7 @@
 	 * gelsin doğru rozet çıksın diye ikisi de okunuyor.
 	 *
 	 * Destekçilik iki ayrı eksen — karıştırılmamalı:
-	 *   • "Erken Destekçi" TEK bir rozet, seviyesi yok (`earlySupporter` bayrağı).
+	 *   • "Erken Destekçi" tek bir rozet, seviyesi yok (`earlySupporter` bayrağı).
 	 *   • OpenAnime+ üyeliğinin ÜÇ kademesi var. Kademe adları sitenin kendi
 	 *     plan tablosundan: tier1 = Lite, tier2 = Standard, tier3 = Pro.
 	 * Sitenin profil sayfası rozeti yalnızca `tier`e bakarak basıyor
@@ -221,7 +221,7 @@
 	$: statusEmoji = str(status?.emoji);
 	$: statusText = str(status?.text);
 
-	// Dekorasyon kimliği 0 ise dekorasyon YOK — sitenin dosya deposunda
+	// Dekorasyon kimliği 0 ise dekorasyon yok — sitenin dosya deposunda
 	// `avatar-decorations/0.png` diye bir varlık bulunmuyor (404), `1.png` var.
 	const DECORATION_BASE = "https://static.openani.me/avatar-decorations/";
 	$: decoration = typeof account?.avatarDecoration === "number" ? account.avatarDecoration : 0;

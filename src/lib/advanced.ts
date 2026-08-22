@@ -223,7 +223,7 @@ export interface MascotSlot {
 	selector: string;
 	hint: string;
 	/**
-	 * Sitede bu örneğin GERÇEK piksel boyutu. `null` ise boyut akışkandır
+	 * Sitede bu örneğin gerçek piksel boyutu. `null` ise boyut akışkandır
 	 * (`height: 100%` / `width: auto`) ve sabit boyut vermek düzeni bozar —
 	 * o slotlarda boyut kaydırıcısı gösterilmez.
 	 */
@@ -271,31 +271,31 @@ export const MASCOT_SLOTS: MascotSlot[] = [
 // --- Logo (3 temanın ortak kalıbı) -----------------------------------------
 
 /**
- * Gizleme kuralı BİLEREK ikiye bölündü.
+ * Görsel ve metin gizleme kuralları ayrı seçicilerle uygulanıyor.
  *
- * Eskiden tek bir birleşik kural vardı ve "görsel VEYA metin" açıksa
- * hepsini gizliyordu. Sonuç: kullanıcı yalnızca site adını değiştirdiğinde
- * orijinal logo `<img>`'i de gizleniyor, ama yerine `::before` basılmadığı
- * için LOGO KAYBOLUYORDU. Artık her biri yalnızca kendi yerine bir şey
- * konduğunda gizleniyor.
+ * Kullanıcı yalnızca site adını değiştirip logo görselini değiştirmediğinde,
+ * yalnızca görseli değiştirip adı değiştirmediğinde her iki durumda da
+ * orijinal logo görünür kalmalı. Tek bir birleşik "görsel veya metin
+ * değiştiyse gizle" kuralı bu ayrımı yapamaz — biri değişince ikisini de
+ * gizler ve yerine hiçbiri konmamışsa logo boş kalırdı.
  */
 export const LOGO_IMAGE_HIDE_SELECTOR =
 	".topbar a.logo img, .topbar a.logo svg, .topbar a.logo-button img, .topbar a.logo-button svg";
 
 /**
  * Yalnızca site adı değişip görsel değişmediğinde devreye girer (bkz.
- * `advancedBuild.ts`). Orijinal ikon GİZLENMEZ, ama satırı flex yapan
+ * `advancedBuild.ts`). Orijinal ikon gizlenmiyor, ama satırı flex yapan
  * `LOGO_ROW_SELECTOR` ve rozeti sabitleyen `LOGO_BADGE_SELECTOR` yüzünden
- * ikon satırdaki TEK esnek (shrink edilebilir) öğe kalır; yer daralınca 0
- * genişliğe küçülüp GÖRÜNMEZ olurdu. Bu seçici yalnızca flex-shrink'i
- * kapatıp konumunu sabitler — `LOGO_IMAGE_HIDE_SELECTOR`'dan BİLEREK farklı
- * bir seçici (doğrudan çocuk `>`): aynı string olsaydı kural haritasında
- * (selector -> body) aynı anahtara düşüp gizleme kuralıyla çakışırdı.
+ * ikon satırdaki tek küçülebilir öğe kalıyor; yer daralınca 0 genişliğe
+ * küçülüp kaybolabilirdi. Bu seçici yalnızca flex-shrink'i kapatıp konumunu
+ * sabitler — `LOGO_IMAGE_HIDE_SELECTOR`'dan bilerek farklı bir seçici
+ * (doğrudan çocuk `>`): aynı string olsaydı kural haritasında aynı anahtara
+ * düşüp gizleme kuralıyla çakışırdı.
  */
 export const LOGO_ICON_GUARD_SELECTOR =
 	".topbar a.logo > img, .topbar a.logo > svg, .topbar a.logo-button > img, .topbar a.logo-button > svg";
 /**
- * DOĞRUDAN çocuk (`>`) seçici BİLEREK kullanıldı: `#badge` (NEXT-GEN rozeti)
+ * doğrudan çocuk (`>`) seçici bilerek kullanıldı: `#badge` (NEXT-GEN rozeti)
  * de kendi metnini aynı `.text-block` sınıfıyla basıyor, ama bir alt seviyede
  * (`a.logo-button #badge .text-block`). Descendant seçici kullanılırsa rozetin
  * metni de gizlenir ve rozet boş/görünmez kalır.
@@ -303,7 +303,7 @@ export const LOGO_ICON_GUARD_SELECTOR =
 export const LOGO_TEXT_HIDE_SELECTOR = ".topbar a.logo > .text-block, .topbar a.logo-button > .text-block";
 
 /**
- * `#badge` (NEXT-GEN rozeti) BU LİSTEDE DEĞİL — bilerek.
+ * `#badge` (NEXT-GEN rozeti) BU LİSTEDE değil — bilerek.
  * Rozet sitenin kendi öğesi ve site adını değiştirmek onu yok etmemeli.
  * Uzun adların rozetin üstüne taşmaması `LOGO_ROW_SELECTOR` /
  * `LOGO_BADGE_SELECTOR` düzen kurallarıyla çözülüyor.

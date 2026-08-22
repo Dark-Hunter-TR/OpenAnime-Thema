@@ -6,7 +6,7 @@
 	 * Sayfanın gerçek iskeleti (canlı bundle'dan, `svelte-ndcra2` hash'i):
 	 *
 	 *   .settings
-	 *     ├ TextBlock variant="title"          ("Ayarlar" — alt başlık YOK)
+	 *     ├ TextBlock variant="title"          ("Ayarlar" — alt başlık yok)
 	 *     ├ <hr class="horizontal" style="margin: 1rem 0px;">
 	 *     └ .expanders
 	 *         └ .expand-section                 (bölüm başına bir tane)
@@ -23,7 +23,7 @@
 	 *            └ .expander-control            (kontrol; gap .5rem)
 	 *
 	 *   2) Katlanan satır — hiçbir prop verilmiyor (varsayılan `expandable`)
-	 *      ve `space-between` YOK: başlıkta kontrol durmuyor, kontroller
+	 *      ve `space-between` yok: başlıkta kontrol durmuyor, kontroller
 	 *      açılan gövdeye iniyor.
 	 *      .expander-content                    (fluent'in padding'i 0'a çekilmiş)
 	 *        └ .item                            (padding: .5rem 3rem; border-top)
@@ -37,22 +37,14 @@
 	 * Bölüm sırası da siteden: orada "Hesap" en üstteki bölüm
 	 * (Hesap → Cihazlar → Profil → Performans → Görünüm → Oynatıcı → Gelişmiş).
 	 *
-	 * `space-between` fluent'in bir prop'u DEĞİL: site onu `class` ile
+	 * `space-between` fluent'in bir prop'u değil: site onu `class` ile
 	 * geçiriyor ve kuralını kendi yazıyor (bkz. aşağıdaki style bloğu).
 	 */
 	import { createEventDispatcher } from "svelte";
-	import {
-		Button,
-		ComboBox,
-		Expander,
-		SegmentedControlButton,
-		TextBlock,
-		ToggleSwitch
-	} from "fluent-svelte-extra";
+	import { Button, ComboBox, Expander, TextBlock, ToggleSwitch } from "fluent-svelte-extra";
 
 	import AccountCard from "$lib/AccountCard.svelte";
 	import Icon from "$lib/Icon.svelte";
-	import SegmentedControl from "$lib/Segmented.svelte";
 	import { ROUTES, VIEWPORTS } from "$lib/routes";
 	import type { AppSettings } from "$lib/settings";
 
@@ -67,6 +59,15 @@
 	/** openani.me oturumu açık mı (Rust, önizleme webview'inin çerez
 	 * kavanozundan okuyor — kullanıcı için görünmez bir ayrıntı). */
 	export let loggedIn = false;
+	/**
+	 * Önizlemenin Sistem/Açık/Koyu modu — editördeki floating seçiciyle AYNI
+	 * değeri gösterir, aynı `setMode`'u çağırır (ikinci bir uygulama yolu yok)
+	 * ve açık proje olup olmadığından bağımsız olarak her zaman değiştirilebilir;
+	 * bu, uygulamanın kendi arayüz temasından (`settings.appTheme`) ayrı bir
+	 * ayar.
+	 */
+	export let themeMode: "system" | "light" | "dark" = "dark";
+	export let onThemeModeChange: (mode: "system" | "light" | "dark") => void;
 	export let onCheckForUpdates: () => void;
 	/** Kontrol mantığı `+page.svelte`'de yaşıyor (Ayarlar'daki düğme ile
 	 * açılıştaki otomatik kontrol AYNI kodu paylaşıyor) — burası yalnızca
@@ -108,6 +109,51 @@
 
 	const viewportItems = VIEWPORTS.map((vp) => ({ name: vp.name, value: vp.id }));
 
+	const editorStartupActionItems = [
+		{ name: "Her zaman sor", value: "ask" },
+		{ name: "Yeni tema oluştur", value: "new" },
+		{ name: "GitHub'dan içe aktar", value: "github" },
+		{ name: "CSS dosyası aç", value: "file" }
+	];
+
+	const themeModeItems = [
+		{ name: "Sistem", value: "system" },
+		{ name: "Açık", value: "light" },
+		{ name: "Koyu", value: "dark" }
+	];
+
+	const editModeItems = [
+		{ name: "Görsel", value: "visual" },
+		{ name: "Kod", value: "code" }
+	];
+
+	const updateChannelItems = [
+		{ name: "Stable", value: "stable" },
+		{ name: "Beta", value: "beta" },
+		{ name: "Alpha", value: "alpha" }
+	];
+
+	const discordScopeItems = [
+		{ name: "Her zaman", value: "always" },
+		{ name: "Sadece düzenlerken", value: "editor" }
+	];
+
+	/**
+	 * ComboBox'ın `select` olayı sadece gerçek bir kullanıcı seçiminde değil,
+	 * bileşen İLK KURULDUĞUNDA da bir kere kendiliğinden ateşleniyor
+	 * (fluent-svelte-extra: `value` değişimini izleyen reaktif blok, önceki
+	 * değeri `Symbol("init")` ile başlatıyor — ilk karşılaştırma her zaman
+	 * "değişti" sayılıyor). `onChannelChange` bir AĞ isteği tetiklediği için
+	 * (`runUpdateCheck`) bu ilk ateşlemeyi yutmazsak Ayarlar sayfası her
+	 * açıldığında sessizce bir güncelleme kontrolü daha yapardı.
+	 */
+	let channelSelectPrimed = false;
+	function handleChannelSelect(event: CustomEvent<{ value: AppSettings["updateChannel"] }>) {
+		settings.updateChannel = event.detail.value;
+		if (channelSelectPrimed) onChannelChange();
+		channelSelectPrimed = true;
+	}
+
 	/**
 	 * Katlanan satırların başlığında seçili değerleri özetliyoruz.
 	 *
@@ -130,6 +176,15 @@
 		: settings.discordRpcScope === "editor"
 			? "Yalnızca tema düzenlerken görünüyorsun"
 			: "Discord'da görünüyorsun";
+	$: editorStartupSummary = !settings.editorQuickStart
+		? "Kapalı — her girişte sorulur"
+		: settings.editorStartupAction === "new"
+			? "Doğrudan yeni tema oluşturur"
+			: settings.editorStartupAction === "github"
+				? "Doğrudan GitHub'dan içe aktarır"
+				: settings.editorStartupAction === "file"
+					? "Doğrudan CSS dosyası açar"
+					: "Her girişte sorulur";
 </script>
 
 <div class="page">
@@ -206,22 +261,11 @@
 								</TextBlock>
 							</div>
 							<div class="expander-control">
-								<SegmentedControl bind:value={settings.discordRpcScope}>
-									<SegmentedControlButton
-										value="always"
-										disabled={!settings.discordRpc}
-										on:click={() => (settings.discordRpcScope = "always")}
-									>
-										Her zaman
-									</SegmentedControlButton>
-									<SegmentedControlButton
-										value="editor"
-										disabled={!settings.discordRpc}
-										on:click={() => (settings.discordRpcScope = "editor")}
-									>
-										Sadece düzenlerken
-									</SegmentedControlButton>
-								</SegmentedControl>
+								<ComboBox
+									items={discordScopeItems}
+									bind:value={settings.discordRpcScope}
+									disabled={!settings.discordRpc}
+								/>
 							</div>
 						</div>
 
@@ -248,32 +292,55 @@
 
 		<!-- --- Görünüm ------------------------------------------------------ -->
 		<section class="expand-section">
-			<TextBlock variant="bodyStrong" class="title">Görünüm</TextBlock>
+			<TextBlock variant="bodyStrong" class="title">Görünüm Ayarları</TextBlock>
 
 			<!-- İkon siteninkiyle aynı: `/settings`'teki "Tema" satırı
-			     `fluent:color-20-regular` kullanıyor (bizde `accent`). -->
-			<Expander class="space-between" expandable={false}>
+			     `fluent:color-20-regular` kullanıyor (bizde `accent`). Katlanan
+			     yapı da sitenin kendi "Tema" satırıyla aynı — tek fark sitedeki
+			     "Özel Tema" satırının burada karşılığı yok, uygulamanın kendi
+			     teması özelleştirilebilir değil. -->
+			<Expander>
 				<Icon slot="icon" name="accent" size={20} />
 				<div class="item-header">
-					<TextBlock variant="body">Uygulama teması</TextBlock>
+					<TextBlock variant="body">Tema</TextBlock>
 					<TextBlock variant="caption" class="text-secondary">
-						Editör arayüzünün rengi. Önizlemedeki sitenin teması bundan bağımsızdır — onu
-						"Görünüm" bölümünden ayarlarsınız.
+						Uygulamanın kendi görünümü ve önizlediğiniz sitenin modu — ikisi
+						birbirinden bağımsız, ikisi de aşağıdan ayarlanır.
 					</TextBlock>
 				</div>
-				<div class="expander-control">
-					<SegmentedControl bind:value={settings.appTheme}>
-						<SegmentedControlButton value="system" on:click={() => (settings.appTheme = "system")}>
-							Sistem
-						</SegmentedControlButton>
-						<SegmentedControlButton value="light" on:click={() => (settings.appTheme = "light")}>
-							Açık
-						</SegmentedControlButton>
-						<SegmentedControlButton value="dark" on:click={() => (settings.appTheme = "dark")}>
-							Koyu
-						</SegmentedControlButton>
-					</SegmentedControl>
-				</div>
+
+				<svelte:fragment slot="content">
+					<div class="items">
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Uygulamanın modu</TextBlock>
+								<TextBlock variant="caption" class="text-secondary">
+									Editör arayüzünün rengi.
+								</TextBlock>
+							</div>
+							<div class="expander-control">
+								<ComboBox items={themeModeItems} bind:value={settings.appTheme} />
+							</div>
+						</div>
+
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Önizlemenin modu</TextBlock>
+								<TextBlock variant="caption" class="text-secondary">
+									Editördeki floating seçiciyle aynı kontrol — uygulamanın modundan
+									bağımsız, açık proje olmasa da değiştirilebilir.
+								</TextBlock>
+							</div>
+							<div class="expander-control">
+								<ComboBox
+									items={themeModeItems}
+									value={themeMode}
+									on:select={(e) => onThemeModeChange(e.detail.value)}
+								/>
+							</div>
+						</div>
+					</div>
+				</svelte:fragment>
 			</Expander>
 		</section>
 
@@ -281,7 +348,54 @@
 		<section class="expand-section">
 			<TextBlock variant="bodyStrong" class="title">Tema editörü</TextBlock>
 
-			<Expander class="space-between" expandable={false}>
+			<!-- Discord Rich Presence bölümüyle aynı kalıp: üst satır ana anahtar
+			     (açık/kapalı), alt satır yalnızca açıkken anlamlı olan seçim. -->
+			<Expander>
+				<Icon slot="icon" name="navEditor" size={20} />
+				<div class="item-header">
+					<TextBlock variant="body">Editör'e hızlı başlama</TextBlock>
+					<TextBlock variant="caption" class="text-secondary">
+						{editorStartupSummary}
+					</TextBlock>
+				</div>
+
+				<svelte:fragment slot="content">
+					<div class="items">
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Sol menüdeki Editör düğmesine tıklayınca</TextBlock>
+								<TextBlock variant="caption" class="text-secondary">
+									Kapalıyken (varsayılan) her tıklamada "Ne yapmak istersiniz?" seçicisi
+									çıkar. Açıkken seçici atlanır, aşağıda seçtiğiniz eylem doğrudan çalışır.
+								</TextBlock>
+							</div>
+							<div class="expander-control">
+								<TextBlock variant="body">{onOff(settings.editorQuickStart)}</TextBlock>
+								<ToggleSwitch bind:checked={settings.editorQuickStart} />
+							</div>
+						</div>
+
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Doğrudan çalışacak eylem</TextBlock>
+								<TextBlock variant="caption" class="text-secondary">
+									"Her zaman sor" seçiliyse üstteki anahtar açık olsa bile seçici yine
+									çıkar — kapatmadan seçiciyi geri getirmenin yolu bu.
+								</TextBlock>
+							</div>
+							<div class="expander-control">
+								<ComboBox
+									items={editorStartupActionItems}
+									bind:value={settings.editorStartupAction}
+									disabled={!settings.editorQuickStart}
+								/>
+							</div>
+						</div>
+					</div>
+				</svelte:fragment>
+			</Expander>
+
+			<Expander>
 				<Icon slot="icon" name="code" size={20} />
 				<div class="item-header">
 					<TextBlock variant="body">Açılış düzenleme modu</TextBlock>
@@ -289,27 +403,24 @@
 						Bir proje açtığınızda hangi sekmeyle başlanacağı.
 					</TextBlock>
 				</div>
-				<div class="expander-control">
-					<SegmentedControl bind:value={settings.defaultEditMode}>
-						<SegmentedControlButton
-							value="visual"
-							on:click={() => (settings.defaultEditMode = "visual")}
-						>
-							Görsel
-						</SegmentedControlButton>
-						<SegmentedControlButton
-							value="code"
-							on:click={() => (settings.defaultEditMode = "code")}
-						>
-							Kod
-						</SegmentedControlButton>
-					</SegmentedControl>
-				</div>
+
+				<svelte:fragment slot="content">
+					<div class="items">
+						<div class="item">
+							<div class="item-text">
+								<TextBlock variant="body">Sekme</TextBlock>
+							</div>
+							<div class="expander-control">
+								<ComboBox items={editModeItems} bind:value={settings.defaultEditMode} />
+							</div>
+						</div>
+					</div>
+				</svelte:fragment>
 			</Expander>
 
 			<!-- Katlanan satır: önizlemenin iki açılış ayarı tek başlık altında.
 			     Sitenin "Tema" satırıyla aynı kalıp — `expandable` varsayılan,
-			     `space-between` YOK, kontroller `.item` satırlarında. -->
+			     `space-between` yok, kontroller `.item` satırlarında. -->
 			<Expander>
 				<Icon slot="icon" name="viewport" size={20} />
 				<div class="item-header">
@@ -441,35 +552,11 @@
 								</TextBlock>
 							</div>
 							<div class="expander-control">
-								<SegmentedControl bind:value={settings.updateChannel}>
-									<SegmentedControlButton
-										value="stable"
-										on:click={() => {
-											settings.updateChannel = "stable";
-											onChannelChange();
-										}}
-									>
-										Stable
-									</SegmentedControlButton>
-									<SegmentedControlButton
-										value="beta"
-										on:click={() => {
-											settings.updateChannel = "beta";
-											onChannelChange();
-										}}
-									>
-										Beta
-									</SegmentedControlButton>
-									<SegmentedControlButton
-										value="alpha"
-										on:click={() => {
-											settings.updateChannel = "alpha";
-											onChannelChange();
-										}}
-									>
-										Alpha
-									</SegmentedControlButton>
-								</SegmentedControl>
+								<ComboBox
+									items={updateChannelItems}
+									value={settings.updateChannel}
+									on:select={handleChannelSelect}
+								/>
 							</div>
 						</div>
 
@@ -511,7 +598,7 @@
 		background-color: var(--fds-solid-background-base);
 	}
 
-	/* Sitenin kendi `hr` sınıfı — fluent temasında YOK, site ekliyor:
+	/* Sitenin kendi `hr` sınıfı — fluent temasında yok, site ekliyor:
 	   hr.horizontal { border-block-start: 1px solid var(--fds-divider-stroke-default) } */
 	hr.horizontal {
 		border: none;

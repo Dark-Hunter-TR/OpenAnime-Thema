@@ -2,7 +2,7 @@
 //!
 //! Bir proje = `app_data_dir()/projects/<id>.json`. Tek dosya, tek proje.
 //! Ana ekrandaki liste dizini tarayarak kuruluyor; ayrı bir indeks dosyası
-//! bilerek YOK. İndeks olsaydı dosyalarla senkron kalmak zorunda olurdu ve
+//! bilerek yok. İndeks olsaydı dosyalarla senkron kalmak zorunda olurdu ve
 //! elle silinen bir proje listede hayalet olarak kalırdı.
 
 use std::path::PathBuf;
@@ -255,7 +255,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn kimlik_dogrulama_dizin_disina_cikmayi_engeller() {
+    fn id_validation_blocks_directory_traversal() {
         assert!(valid_id("p-1a2b3c"));
         assert!(valid_id("abc123"));
 
@@ -271,14 +271,14 @@ mod tests {
     }
 
     #[test]
-    fn uretilen_kimlik_gecerlidir() {
+    fn generated_id_is_valid() {
         assert!(valid_id(&new_id()));
     }
 
     /// Özet şeması tam gövdeden okunabilmeli — `ui` / `cssText` gibi ağır
     /// alanlar yok sayılmalı.
     #[test]
-    fn ozet_semasi_tam_projeyi_okuyabilir() {
+    fn summary_schema_can_read_full_project() {
         let full = serde_json::json!({
             "id": "p-1",
             "name": "Test",

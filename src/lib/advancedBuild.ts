@@ -7,7 +7,7 @@
  *
  * İki kural:
  *   1. Her selector openani.me'nin canlı CSS'inde doğrulandı (bkz. advanced.ts).
- *   2. Her varsayılan sitenin GERÇEK değeri — `defaults.ts` ya da katalog.
+ *   2. Her varsayılan sitenin gerçek değeri — `defaults.ts` ya da katalog.
  *      Bir bölüm kapalıyken hiçbir şey yazılmaz; açıkken varsayılan
  *      değerleriyle yazılan CSS sitenin kendi görünümüyle aynıdır.
  */
@@ -368,7 +368,7 @@ export function buildAdvTokens(adv: AdvState): Record<string, string> {
 		}
 	}
 
-	// Not: `--fds-person-picture-size` bilerek burada DEĞİL. Site onu her
+	// Not: `--fds-person-picture-size` bilerek burada değil. Site onu her
 	// PersonPicture örneğinde ayrı veriyor; global ezmek kart içindeki
 	// `inline-size: 100%` avatarları bozar. Kural olarak, üst çubukla
 	// sınırlı biçimde `buildAdvRules` içinde yazılıyor.
@@ -420,8 +420,8 @@ export function buildAdvRules(adv: AdvState): Record<string, string> {
 	}
 
 	// --- Logo ve site adı ----------------------------------------------------
-	// Gizleme kuralları BAĞIMSIZ: yalnızca site adını değiştiren kullanıcının
-	// logosu kaybolmasın diye (eskiden tek birleşik kural vardı).
+	// Gizleme kuralları bağımsız: yalnızca site adını değiştiren kullanıcının
+	// logosu kaybolmasın diye (bkz. `advanced.ts` -> `LOGO_IMAGE_HIDE_SELECTOR`).
 	const logoImageActive = adv.logo.imageOn && adv.logo.dataUri !== "";
 	const logoTextActive = adv.logo.textOn && adv.logo.text.trim() !== "";
 
@@ -434,7 +434,7 @@ export function buildAdvRules(adv: AdvState): Record<string, string> {
 		// Görsel değişmiyor: orijinal ikon olduğu gibi kalmalı. Ama satır
 		// artık flex (LOGO_ROW_SELECTOR) ve rozet sabit genişlik alıyor
 		// (LOGO_BADGE_SELECTOR) — ikonun flex-shrink'i kapatılmazsa satırdaki
-		// TEK esnek öğe o kalır ve yer daralınca 0 genişliğe küçülüp
+		// tek esnek öğe o kalır ve yer daralınca 0 genişliğe küçülüp
 		// GÖRÜNMEZ olur. `order: 0` ile de en solda kalması garantilenir.
 		map[LOGO_ICON_GUARD_SELECTOR] = "order: 0; flex: 0 0 auto !important;";
 	}

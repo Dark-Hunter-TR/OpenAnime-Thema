@@ -65,7 +65,7 @@ export function checkForUpdate(channel: UpdateChannel, force = false): Promise<U
 export async function downloadAndInstallUpdate(
 	onProgress: (progress: UpdateProgress) => void
 ): Promise<void> {
-	// Dinleyici çağrıdan ÖNCE kuruluyor: indirme Rust tarafında ayrı bir
+	// Dinleyici çağrıdan önce kuruluyor: indirme Rust tarafında ayrı bir
 	// görevde başlıyor ve ilk ilerleme olayı `invoke` daha dönmeden gelebilir.
 	let unlisten: (() => void) | undefined;
 

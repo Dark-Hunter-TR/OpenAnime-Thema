@@ -3,7 +3,7 @@
  *
  * Burada sınanan üç şey, elle doğrulaması en pahalı olanlar:
  *   1. Logo/site adı bağımsızlığı (daha önce logonun kaybolmasına yol açan hata)
- *   2. Varsayılanların sitenin GERÇEK değerleriyle eşleşmesi
+ *   2. Varsayılanların sitenin gerçek değerleriyle eşleşmesi
  *   3. Sıfırlamanın yalnızca hedef bölümü etkilemesi ve CSS'ten tam düşmesi
  */
 
@@ -48,7 +48,7 @@ test("yalnızca site adı değişince orijinal ikon shrink ile kaybolmasın diye
 
 	const rules = buildAdvRules(adv);
 
-	// İkon gizlenmiyor (önceki test) ama flex satırda TEK esnek öğe kalıp
+	// İkon gizlenmiyor (önceki test) ama flex satırda tek esnek öğe kalıp
 	// 0 genişliğe küçülmesin diye ayrı bir korumaya sahip olmalı.
 	expect(rules[LOGO_ICON_GUARD_SELECTOR]).toContain("flex: 0 0 auto");
 	expect(rules[LOGO_ICON_GUARD_SELECTOR]).toContain("order: 0");
@@ -64,7 +64,7 @@ test("logo, ad ve rozet DOM sırasından bağımsız olarak ikon -> ad -> rozet 
 	const rules = buildAdvRules(adv);
 
 	// `::after` (ad) CSS gereği her zaman gerçek çocuklardan (rozet dâhil)
-	// SONRA basılır — `order` olmadan ad her zaman rozetin sağına düşerdi.
+	// sonra basılır — `order` olmadan ad her zaman rozetin sağına düşerdi.
 	expect(rules[LOGO_IMAGE_SELECTOR]).toContain("order: 0");
 	expect(rules[LOGO_TEXT_SELECTOR]).toContain("order: 1");
 	expect(rules[LOGO_BADGE_SELECTOR]).toContain("order: 2");

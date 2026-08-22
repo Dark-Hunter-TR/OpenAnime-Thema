@@ -7,7 +7,7 @@
 	 * kullanıyor — ikisi de görsel olarak aynı "kart" üzerine kurulu, yalnızca
 	 * başlık/alt başlık ve `#content` içeriği değişiyor. Kapatma düğmesinin
 	 * animasyon senkronizasyon düzeltmesi (bkz. aşağıdaki `transition:scale`
-	 * notu) ve maskot seçimi burada TEK yerde yaşadığı için iki diyalog da
+	 * notu) ve maskot seçimi burada tek yerde yaşadığı için iki diyalog da
 	 * otomatik olarak aynı davranışı miras alıyor.
 	 */
 	import { fade, scale } from "svelte/transition";

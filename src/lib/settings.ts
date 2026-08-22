@@ -23,10 +23,36 @@ const KEY = "oa-editor-settings";
  */
 export type DiscordScope = "always" | "editor";
 
+/**
+ * Açık tema yokken NavRail'deki "Editör" düğmesine tıklanınca sorulacak eylem.
+ *
+ * `editorQuickStart` KAPALIYKEN bu değerin hiçbir etkisi yok — seçici her
+ * seferinde çıkar. Açıldığında bu değer hangi eylemin doğrudan çalışacağını
+ * belirler; `"ask"` seçiliyse (kullanıcı bilerek bunu seçmiş olabilir) açık
+ * olsa bile yine seçici çıkar. Bkz. `editorQuickStart`.
+ */
+export type EditorStartupAction = "ask" | "new" | "github" | "file";
+
 export interface AppSettings {
 	version: 2;
 	/** Editör arayüzünün kendi teması — önizlemedeki siteyi etkilemez. */
 	appTheme: ThemeMode;
+	/**
+	 * Editör'e hızlı başlama açık mı?
+	 *
+	 * Ana anahtar — Discord'daki `discordRpc` ile aynı kalıp. Kapalıyken
+	 * (varsayılan) `editorStartupAction` ne olursa olsun seçici her zaman
+	 * çıkar; bu, mevcut kullanıcıların davranışını sessizce değiştirmemek
+	 * için varsayılan olarak kapalı tutuluyor. Kullanıcı bir kez hangi yolu
+	 * hep seçtiğini fark edip açtığında, kapatması seçimi UNUTMAZ — yalnızca
+	 * seçiciyi tekrar devreye sokar.
+	 */
+	editorQuickStart: boolean;
+	/**
+	 * Açık tema yokken Editör'e girildiğinde ne yapılacağı.
+	 * Yalnızca `editorQuickStart` açıkken uygulanır. Bkz. `EditorStartupAction`.
+	 */
+	editorStartupAction: EditorStartupAction;
 	/** Bir proje açıldığında hangi düzenleme modunda başlanacağı. */
 	defaultEditMode: "visual" | "code";
 	defaultViewport: "desktop" | "tablet" | "mobile";
@@ -47,8 +73,8 @@ export interface AppSettings {
 	/**
 	 * Hangi yayın kanalından güncelleme alınacağı.
 	 *
-	 * Kanallar depoda AYRI manifest dosyaları (bkz. `src-tauri/src/updater.rs`).
-	 * Stable kanaldaki bir kullanıcıya ön-sürüm ASLA sunulmaz; filtreleme
+	 * Kanallar depoda ayrı manifest dosyaları (bkz. `src-tauri/src/updater.rs`).
+	 * Stable kanaldaki bir kullanıcıya ön-sürüm asla sunulmaz; filtreleme
 	 * istemcide değil, hangi dosyanın okunduğunda gerçekleşiyor.
 	 *
 	 * Varsayılan `stable`: ön-sürümler bilerek seçilmesi gereken bir şey.
@@ -77,6 +103,8 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
 	version: 2,
 	appTheme: "system",
+	editorQuickStart: false,
+	editorStartupAction: "ask",
 	defaultEditMode: "visual",
 	defaultViewport: "desktop",
 	defaultPreviewPath: "/",
@@ -159,7 +187,7 @@ let applied: ThemeMode | null = null;
  * fluent-svelte-extra bileşenlerinde 30 kadar `transition:` kuralı var ve
  * bunlar rengi 83–250ms boyunca YUMUŞATARAK değiştiriyor. Buna karşılık
  * editördeki renk alanları — renk örnekleri, ColorPicker'ın palet yüzeyi,
- * hex/RGB kutularının zeminleri — satır içi stille boyandığı için ANINDA
+ * hex/RGB kutularının zeminleri — satır içi stille boyandığı için anında
  * değişiyor. Sonuç: sınıf değiştiği anda ekranın bir kısmı yeni paleti,
  * bir kısmı hâlâ eskisini gösteriyor ve arada tutarsız, "bozuk" görünen
  * kareler oluşuyor. En belirgin hâli "Sistem"e geçişte, çünkü işletim

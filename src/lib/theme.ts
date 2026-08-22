@@ -29,7 +29,7 @@ export const DEFAULT_ACCENT: [number, number, number] = [206, 100, 42];
 export function defaultDoc(): ThemeDoc {
 	return {
 		accent: [...DEFAULT_ACCENT],
-		mode: "dark",
+		mode: "system",
 		controlCornerRadius: null,
 		overlayCornerRadius: null,
 		imports: [],

@@ -34,7 +34,7 @@
 	 * birden çok kez geliyor. Akış da Vanguard'ın arkasında, yani o da aynı
 	 * köprüden geçiyor (`$lib/theme.ts` -> `accountQrNext`).
 	 *
-	 * ## Kayıt olma BİLEREK yok
+	 * ## Kayıt olma bilerek yok
 	 *
 	 * Bu bir tema editörü; hesap açma yeri değil. Uygulama yalnızca var olan
 	 * bir hesapla giriş yapılmasını sağlıyor.
@@ -65,7 +65,7 @@
 	 * tazeleyip hesap kartını yeniliyor. */
 	export let onSuccess: () => void;
 	/** Parola sıfırlama ve e-posta doğrulama akışlarının uygulamada karşılığı
-	 * YOK (ikisi de Cloudflare Turnstile captcha'sı istiyor); bunlar kullanıcıyı
+	 * yok (ikisi de Cloudflare Turnstile captcha'sı istiyor); bunlar kullanıcıyı
 	 * önizlemedeki gerçek siteye yolluyor. */
 	export let onOpenSite: () => void;
 

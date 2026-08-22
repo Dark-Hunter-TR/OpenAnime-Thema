@@ -9,6 +9,8 @@
 	// hariç kalıyor — onlara ayrıca bir şey eklemek gerekmiyor.
 
 	import { onDestroy, onMount } from "svelte";
+	import { fly } from "svelte/transition";
+	import { cubicOut } from "svelte/easing";
 	import { IconButton, TextBlock, Tooltip } from "fluent-svelte-extra";
 	import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -23,9 +25,45 @@
 	 */
 	export let title = "";
 
+	/**
+	 * "Geri" oku. `null` ise hiç yok; bir fonksiyon verilirse logonun SOLUNDA
+	 * belirir.
+	 *
+	 * Sitenin kendi üst çubuğu bunu BİREBİR böyle yapıyor (bundle'dan
+	 * doğrulandı, `openanime-bzhM1JJJ.js`): ana sayfadayken logo tek başına
+	 * bir bağlantı (`homepage-nav`), herhangi bir alt sayfadaysa
+	 * (`route.id != "/"`) `fluent:arrow-left-24-regular` oku logonun önüne
+	 * `fly({x:-10, duration:300, easing: <cubic-out>})` ile kayarak giriyor.
+	 *
+	 * Derlenmiş koddaki iz (`xn(e,Tn,{...},!0)` girişte, aynı örnek üstünde
+	 * `.run(1)`/`.run(0)` ile yön değiştirilerek çıkışta) tek bir çift yönlü
+	 * `transition:` yönergesinin imzası — Svelte'in ayrı `in:`/`out:`
+	 * çiftinde ürettiği `create_in_transition`/`create_out_transition`
+	 * değil. Aşağıda da bilerek `transition:fly` (tek yönerge) kullanılıyor;
+	 * ayrı `in:fly`+`out:fly` görünüşte aynı dursa da yarıda kesilen bir
+	 * geçişi TERSİNE çevirmek yerine sıfırdan başlatır.
+	 *
+	 * Bizde "alt sayfa" karşılığı Editör — Ana Sayfa/Ayarlar/Hakkında'dan
+	 * girildiği için oradan geri dönmenin bir yolu olmalı.
+	 */
+	export let onBack: (() => void) | null = null;
+
 	const appWindow = getCurrentWindow();
 
-	/** Büyütme düğmesinin ikonu pencerenin GERÇEK durumunu göstermeli. */
+	/**
+	 * macOS'ta pencere `decorations: true` + `titleBarStyle: "Overlay"` ile
+	 * açılıyor (bkz. `tauri.macos.conf.json`), yani sistemin kendi trafik ışıkları
+	 * duruyor. Kendi küçült/büyüt/kapat düğmelerimizi orada göstermek onların
+	 * ikizini çizmek olurdu; bunun yerine düğmeleri gizleyip sola trafik
+	 * ışıklarının kaplayacağı kadar dolgu bırakıyoruz.
+	 *
+	 * Tespit `navigator` üzerinden: `@tauri-apps/plugin-os` yalnızca bu tek
+	 * bilgi için bir eklenti daha eklemeyi gerektirirdi ve WKWebView'in
+	 * userAgent'ı bu konuda güvenilir.
+	 */
+	const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
+
+	/** Büyütme düğmesinin ikonu pencerenin gerçek durumunu göstermeli. */
 	let maximized = false;
 
 	let unlisten: (() => void) | null = null;
@@ -46,7 +84,7 @@
 </script>
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="titlebar" data-tauri-drag-region>
+<div class="titlebar" class:mac={isMac} data-tauri-drag-region>
 	<!--
 		Üç bölge, sitenin üst barındaki gibi:
 		  sol   — logo + ad + rozet
@@ -54,6 +92,15 @@
 		  sağ   — ikon grubu (bizde pencere düğmeleri)
 	-->
 	<div class="brand" data-tauri-drag-region>
+		{#if onBack}
+			<div class="back-button" transition:fly={{ x: -10, duration: 300, easing: cubicOut }}>
+				<Tooltip text="Ana sayfaya dön">
+					<IconButton on:click={onBack} aria-label="Ana sayfaya dön">
+						<Icon name="back" size={16} />
+					</IconButton>
+				</Tooltip>
+			</div>
+		{/if}
 		<img class="app-icon" src="/app-icon.png" alt="" draggable="false" data-tauri-drag-region />
 		<TextBlock variant="caption">OpenAnime</TextBlock>
 		<!-- Sitedeki "Next-Gen" rozetinin karşılığı; stili birebir onunki. -->
@@ -66,31 +113,33 @@
 		{/if}
 	</div>
 
-	<div class="controls">
-		<Tooltip text="Simge durumuna küçült">
-			<IconButton on:click={() => appWindow.minimize()} aria-label="Simge durumuna küçült">
-				<Icon name="minimize" size={16} />
-			</IconButton>
-		</Tooltip>
+	{#if !isMac}
+		<div class="controls">
+			<Tooltip text="Simge durumuna küçült">
+				<IconButton on:click={() => appWindow.minimize()} aria-label="Simge durumuna küçült">
+					<Icon name="minimize" size={16} />
+				</IconButton>
+			</Tooltip>
 
-		<Tooltip text={maximized ? "Geri yükle" : "Ekranı kapla"}>
-			<IconButton
-				on:click={async () => {
-					await appWindow.toggleMaximize();
-					await sync();
-				}}
-				aria-label={maximized ? "Geri yükle" : "Ekranı kapla"}
-			>
-				<Icon name={maximized ? "restore" : "maximize"} size={16} />
-			</IconButton>
-		</Tooltip>
+			<Tooltip text={maximized ? "Geri yükle" : "Ekranı kapla"}>
+				<IconButton
+					on:click={async () => {
+						await appWindow.toggleMaximize();
+						await sync();
+					}}
+					aria-label={maximized ? "Geri yükle" : "Ekranı kapla"}
+				>
+					<Icon name={maximized ? "restore" : "maximize"} size={16} />
+				</IconButton>
+			</Tooltip>
 
-		<Tooltip text="Kapat">
-			<IconButton class="close" on:click={() => appWindow.close()} aria-label="Kapat">
-				<Icon name="close" size={16} />
-			</IconButton>
-		</Tooltip>
-	</div>
+			<Tooltip text="Kapat">
+				<IconButton class="close" on:click={() => appWindow.close()} aria-label="Kapat">
+					<Icon name="close" size={16} />
+				</IconButton>
+			</Tooltip>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -134,6 +183,20 @@
 		-webkit-user-select: none;
 	}
 
+	/* macOS: sistemin trafik ışıkları başlık çubuğunun üstüne biniyor
+	   (`titleBarStyle: "Overlay"`). 78px onların kapladığı şeritten biraz
+	   geniş — logo tam bitişiğine değil, rahat bir boşluktan sonra başlıyor.
+	   Sağdaki 4px'lik dar dolgu da kalkıyor: orada artık pencere düğmesi yok,
+	   Windows konvansiyonunu macOS'a taşımanın anlamı olmaz. */
+	.titlebar.mac {
+		padding-left: 78px;
+		padding-right: 0.6rem;
+	}
+
+	.titlebar.mac .app-icon {
+		margin-left: 0;
+	}
+
 	/* Sitenin `.topbar .logo` kuralı. */
 	.brand {
 		display: flex;
@@ -141,6 +204,14 @@
 		justify-content: center;
 		min-width: 0;
 		transition: all var(--fds-control-fast-duration);
+	}
+
+	/* Geri oku: logonun soluna, aralarında IconButton'ın kendi dolgusu yeterli
+	   boşluğu bıraktığı için ek bir margin gerekmiyor — sitede de böyle. */
+	.back-button {
+		display: flex;
+		align-items: center;
+		flex: none;
 	}
 
 	/* Sitenin `.topbar .logo img` kuralı: 1.1rem kare, solda .75rem,

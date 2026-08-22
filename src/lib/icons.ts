@@ -26,6 +26,9 @@ import focus from "@fluentui/svg-icons/icons/square_hint_24_regular.svg?raw";
 import file from "@fluentui/svg-icons/icons/document_24_regular.svg?raw";
 import open from "@fluentui/svg-icons/icons/folder_open_24_regular.svg?raw";
 import openExternal from "@fluentui/svg-icons/icons/open_24_regular.svg?raw";
+// Sitenin başlık çubuğundaki "geri" oku — `fluent:arrow-left-24-regular`
+// (bundle'da doğrulandı, bkz. TitleBar.svelte -> `onBack`).
+import back from "@fluentui/svg-icons/icons/arrow_left_24_regular.svg?raw";
 import save from "@fluentui/svg-icons/icons/save_24_regular.svg?raw";
 import update from "@fluentui/svg-icons/icons/arrow_sync_24_regular.svg?raw";
 import refresh from "@fluentui/svg-icons/icons/arrow_clockwise_24_regular.svg?raw";
@@ -81,7 +84,7 @@ import navAboutOn from "@fluentui/svg-icons/icons/info_24_filled.svg?raw";
 //
 // InfoBar'ın kendi varsayılan ikonu `InfoBadge`: 16px'lik renkli bir hap ve
 // içinde 8px'lik çıplak bir glif (düz onay işareti, çarpı, ünlem). Bunlar
-// Fluent System Icons setinden DEĞİL. Sitenin durum kutularında kullandığı
+// Fluent System Icons setinden değil. Sitenin durum kutularında kullandığı
 // 20px'lik daireli ikonların karşılıkları bunlar; `StatusBar` her önem
 // derecesine doğru olanı bağlıyor.
 //
@@ -141,6 +144,7 @@ export const ICONS = {
 	file,
 	open,
 	openExternal,
+	back,
 	save,
 	update,
 	refresh,

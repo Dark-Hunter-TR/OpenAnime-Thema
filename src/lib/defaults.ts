@@ -1,7 +1,7 @@
 /**
- * Varsayılan değerlerin TEK kaynağı.
+ * Varsayılan değerlerin tek kaynağı.
  *
- * İki tür varsayılan var ve ikisi de tahmin DEĞİL:
+ * İki tür varsayılan var ve ikisi de tahmin değil:
  *
  * 1. **Token varsayılanları** — `catalog.generated.ts` üzerinden
  *    fluent-svelte-extra'nın `theme.css` / `switchable.css` dosyalarından
@@ -152,7 +152,7 @@ export const SITE_DEFAULTS = {
 	// Yazı tipi ölçeği: 1 = sitenin kendi boyutları.
 	fontScale: 1
 };
-// `as const` BİLEREK yok: bu değerler kontrollerin başlangıç değeri olarak
+// `as const` bilerek yok: bu değerler kontrollerin başlangıç değeri olarak
 // atanıyor ve sonra kullanıcı tarafından değiştiriliyor. `as const` onları
 // literal tipe (`4`, `8`, `1`) daraltıp her atamayı tip hatasına çevirirdi.
 

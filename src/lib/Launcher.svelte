@@ -9,28 +9,19 @@
 	 */
 	import {
 		Button,
-		ComboBox,
 		ContentDialog,
 		IconButton,
 		MenuFlyout,
 		MenuFlyoutDivider,
 		MenuFlyoutItem,
-		ProgressRing,
 		TextBlock,
 		TextBox,
 		Tooltip
 	} from "fluent-svelte-extra";
 
+	import GithubImportDialog from "$lib/GithubImportDialog.svelte";
 	import Icon from "$lib/Icon.svelte";
-	import StatusBar from "$lib/StatusBar.svelte";
-	import { isEnter, type ForwardedKeyEvent } from "$lib/events";
-	import {
-		ImportError,
-		fetchCss,
-		resolveThemeFiles,
-		suggestProjectName,
-		type GithubFile
-	} from "$lib/github";
+	import { isEnter } from "$lib/events";
 	import { formatUpdated, type ProjectSummary } from "$lib/projects";
 
 	export let projects: ProjectSummary[] = [];
@@ -94,89 +85,9 @@
 	}
 
 	// --- GitHub'dan içe aktarma ---------------------------------------------
+	// Diyaloğun kendisi `GithubImportDialog.svelte`'de: Editör'e açık proje
+	// olmadan girildiğinde `+page.svelte` de aynı diyaloğu açıyor.
 	let importOpen = false;
-	let importUrl = "";
-	let importName = "";
-	let importError = "";
-	let importBusy = false;
-	/** Depoda birden fazla `.css` bulunduğunda kullanıcıya seçtiriyoruz. */
-	let candidates: GithubFile[] = [];
-	let chosenPath = "";
-	let importSource = "";
-	function cleanPathDisplay(p: string): string {
-		return p ? (p.split("/").pop() ?? p) : "";
-	}
-
-	$: chosen = candidates.find((file) => file.path === chosenPath) ?? candidates[0];
-	$: comboItems = candidates.map((file) => ({
-		name: cleanPathDisplay(file.path),
-		value: file.path
-	}));
-	$: if (chosen) {
-		importName = suggestProjectName(chosen);
-	}
-
-	function resetImport() {
-		importUrl = "";
-		importName = "";
-		importError = "";
-		importBusy = false;
-		candidates = [];
-		chosenPath = "";
-		importSource = "";
-	}
-
-	function openImport() {
-		resetImport();
-		importOpen = true;
-	}
-
-	/** Adım 1: bağlantıyı çözümle, aday `.css` dosyalarını bul. */
-	async function resolve() {
-		importError = "";
-		importBusy = true;
-		try {
-			const result = await resolveThemeFiles(importUrl);
-			candidates = result.files;
-			importSource = result.source;
-			chosenPath = result.files[0]?.path ?? "";
-			if (result.files[0]) importName = suggestProjectName(result.files[0]);
-		} catch (e) {
-			candidates = [];
-			importError = e instanceof ImportError ? e.message : String(e);
-		} finally {
-			importBusy = false;
-		}
-	}
-
-	/** Adım 2: seçilen dosyayı indir ve projeye dönüştür. */
-	async function runImport() {
-		if (!chosen) return;
-		importError = "";
-		importBusy = true;
-		try {
-			const css = await fetchCss(chosen);
-			onImport({
-				css,
-				name: importName.trim() || suggestProjectName(chosen),
-				source: importSource || importUrl.trim()
-			});
-			importOpen = false;
-			resetImport();
-		} catch (e) {
-			importError = e instanceof ImportError ? e.message : String(e);
-		} finally {
-			importBusy = false;
-		}
-	}
-
-	function onUrlKey(event: ForwardedKeyEvent) {
-		if (!isEnter(event)) return;
-		// Enter, kullanıcının o an bulunduğu adımı ilerletir: henüz aday yoksa
-		// bağlantıyı çözümler, varsa içe aktarır.
-		if (candidates.length) runImport();
-		else resolve();
-	}
 </script>
 
 <div class="page">
@@ -193,7 +104,7 @@
 			<Button variant="accent" on:click={onCreate}>
 				<Icon name="add" size={16} /><span class="gap">Yeni tema oluştur</span>
 			</Button>
-			<Button on:click={openImport}>
+			<Button on:click={() => (importOpen = true)}>
 				<Icon name="github" size={16} /><span class="gap">GitHub'dan içe aktar</span>
 			</Button>
 			<Button on:click={onOpenFile}>
@@ -290,81 +201,7 @@
 </div>
 
 <!-- --- GitHub içe aktarma diyaloğu ------------------------------------- -->
-<ContentDialog bind:open={importOpen} title="GitHub'dan tema içe aktar" size="standard">
-	<div class="dialog">
-		<TextBlock variant="caption">
-			Depo, klasör, dosya ya da gist bağlantısı girebilirsiniz. Örnekler:
-		</TextBlock>
-		<TextBlock variant="caption">
-			<code>https://github.com/sahip/depo</code> ·
-			<code>…/blob/main/tema.css</code> ·
-			<code>sahip/depo</code>
-		</TextBlock>
-
-		<!-- svelte-ignore a11y-label-has-associated-control -->
-		<label>
-			<TextBlock variant="caption">Bağlantı</TextBlock>
-			<TextBox
-				bind:value={importUrl}
-				placeholder="https://github.com/sahip/depo"
-				on:keydown={onUrlKey}
-				disabled={importBusy}
-			/>
-		</label>
-
-		{#if candidates.length > 1}
-			<TextBlock variant="caption">
-				Depoda {candidates.length} CSS dosyası var — hangisi tema?
-			</TextBlock>
-			<ComboBox items={comboItems} bind:value={chosenPath} disabled={importBusy} />
-		{:else if candidates.length === 1}
-			<TextBlock variant="caption">
-				<Icon name="file" size={12} /><span class="gap">{cleanPathDisplay(candidates[0].path)}</span>
-			</TextBlock>
-		{/if}
-
-		{#if candidates.length}
-			<!-- svelte-ignore a11y-label-has-associated-control -->
-			<label>
-				<TextBlock variant="caption">Proje adı</TextBlock>
-				<TextBox bind:value={importName} disabled={importBusy} clearButton={false} />
-			</label>
-		{/if}
-
-		{#if importError}
-			<StatusBar severity="critical" title="İçe aktarılamadı" message={importError} closable={false} />
-		{/if}
-
-		{#if importBusy}
-			<div class="busy">
-				<ProgressRing size={20} />
-				<TextBlock variant="caption">
-					{candidates.length ? "Tema indiriliyor…" : "Depo taranıyor…"}
-				</TextBlock>
-			</div>
-		{/if}
-
-		<StatusBar severity="information" title="" closable={false}>
-			<TextBlock variant="caption">
-				Çekilen CSS'teki renk, köşe yarıçapı ve yazı tipi değerleri kontrollere otomatik
-				eşlenir. Eşlenemeyen kurallar kaybolmaz — "Ham CSS" bölümünde olduğu gibi korunur.
-			</TextBlock>
-		</StatusBar>
-	</div>
-
-	<svelte:fragment slot="footer">
-		{#if candidates.length}
-			<Button variant="accent" disabled={importBusy} on:click={runImport}>
-				<Icon name="download" size={14} /><span class="gap">İçe aktar</span>
-			</Button>
-		{:else}
-			<Button variant="accent" disabled={importBusy || !importUrl.trim()} on:click={resolve}>
-				Devam
-			</Button>
-		{/if}
-		<Button on:click={() => (importOpen = false)}>Vazgeç</Button>
-	</svelte:fragment>
-</ContentDialog>
+<GithubImportDialog bind:open={importOpen} {onImport} />
 
 <!-- --- Yeniden adlandırma ---------------------------------------------- -->
 <ContentDialog open={renaming !== null} title="Yeniden adlandır" size="standard">
@@ -562,24 +399,6 @@
 	.empty-icon {
 		display: inline-flex;
 		color: var(--fds-text-tertiary);
-	}
-
-	.dialog {
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	/* ContentDialog içinde ComboBox dropdown'u düzgün görünsün diye
-	   z-index ve overflow düzeltmeleri. */
-	.dialog :global(.combo-box-dropdown) {
-		z-index: 200;
-	}
-
-	.busy {
-		display: flex;
-		align-items: center;
-		gap: 8px;
 	}
 
 	label {

@@ -26,7 +26,6 @@
 	}
 
 	export let current: NavId = "home";
-	export let editorEnabled = false;
 	export let aboutOpen = false;
 	export let onNavigate: (id: NavId) => void;
 	export let onOpenAbout: () => void;
@@ -65,8 +64,12 @@
 		}
 	];
 
-	const isDisabled = (entry: NavEntry) => entry.id === "editor" && !editorEnabled;
-
+	/**
+	 * Hiçbir giriş devre dışı değil — Editör dâhil. Açık tema yoksa
+	 * `+page.svelte` "ne yapmak istersiniz?" seçicisini açıyor (yeni tema /
+	 * GitHub'dan içe aktar / CSS dosyası aç); düğmeyi kapalı göstermek
+	 * kullanıcıya nasıl açılacağını göstermezdi.
+	 */
 	function go(entry: NavEntry) {
 		if (entry.id === "about") {
 			onOpenAbout();
@@ -79,14 +82,11 @@
 <nav class="sidebar no-select">
 	<div id="top" class="group" role="group">
 		{#each TOP as entry (entry.id)}
-			{@const disabled = isDisabled(entry)}
 			{@const selected = aboutOpen ? false : current === entry.id}
 			<button
 				type="button"
-				tabindex={disabled ? -1 : 0}
 				class="list-item no-select"
 				class:selected
-				class:disabled
 				aria-label={entry.label}
 				on:click={() => go(entry)}
 			>
@@ -102,14 +102,11 @@
 
 	<div id="bottom" class="group" role="group">
 		{#each BOTTOM as entry (entry.id)}
-			{@const disabled = isDisabled(entry)}
 			{@const selected = aboutOpen ? entry.id === "about" : current === entry.id}
 			<button
 				type="button"
-				tabindex={disabled ? -1 : 0}
 				class="list-item no-select setting-btn"
 				class:selected
-				class:disabled
 				aria-label={entry.label}
 				on:click={() => go(entry)}
 			>
@@ -181,11 +178,11 @@
 			transform var(--fds-control-faster-duration) var(--fds-control-fast-out-slow-in-easing);
 	}
 
-	.sidebar button.list-item:hover:not(.disabled) {
+	.sidebar button.list-item:hover {
 		background-color: var(--fds-subtle-fill-secondary);
 	}
 
-	.sidebar button.list-item:active:not(.disabled) {
+	.sidebar button.list-item:active {
 		background-color: var(--fds-subtle-fill-tertiary);
 		transform: scale(0.97);
 	}
@@ -225,12 +222,6 @@
 		}
 	}
 
-	.sidebar button.list-item.disabled {
-		opacity: 0.38;
-		pointer-events: none;
-		cursor: default;
-	}
-
 	.sidebar button.list-item > span {
 		display: flex !important;
 		justify-content: center;
@@ -262,7 +253,7 @@
 		margin-bottom: 0;
 	}
 
-	.sidebar button.list-item:hover:not(.disabled) :global(.icon) {
+	.sidebar button.list-item:hover :global(.icon) {
 		transform: scale(1.08);
 	}
 

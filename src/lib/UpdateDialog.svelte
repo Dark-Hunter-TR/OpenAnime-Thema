@@ -48,9 +48,8 @@
 	}
 
 	// Toplama Rust tarafında yapılıyor (bkz. `updater.rs` -> `Progress`);
-	// burada yalnızca son duruma yazıyoruz. Eskiden baytları bu bileşen
-	// biriktiriyordu — indirme başka bir süreçte ilerlediği için o sayaç artık
-	// burada tutulamaz.
+	// indirme ayrı bir süreçte ilerlediği için burada yalnızca son duruma
+	// yazıyoruz, bayt sayacı tutmuyoruz.
 	function handleProgress(progress: UpdateProgress) {
 		if (progress.status === "downloading") {
 			status = "downloading";

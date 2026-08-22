@@ -14,7 +14,7 @@
 //! Kanallar `main` dalındaki `updater/latest-<kanal>.json` dosyaları. Yayın
 //! iş akışı her sürümden sonra yalnızca KENDİ kanalının dosyasını güncelliyor
 //! (bkz. `.github/workflows/release.yml`). Ayrımın kritik sonucu şu: Stable
-//! kanaldaki bir kullanıcıya alpha/beta sürümü ASLA görünmez, çünkü o sürüm
+//! kanaldaki bir kullanıcıya alpha/beta sürümü asla görünmez, çünkü o sürüm
 //! Stable manifeste hiç yazılmaz. Tek bir manifeste "en yeni sürüm" yazıp
 //! istemcide filtrelemek aynı garantiyi vermezdi.
 //!
@@ -83,7 +83,7 @@ impl Channel {
 pub struct CheckResult {
     /// Kanalda henüz hiç yayın yok (manifest dosyası depoda bulunmuyor).
     ///
-    /// `available: false` ile aynı şey DEĞİL: biri "güncelsin", diğeri "bu
+    /// `available: false` ile aynı şey değil: biri "güncelsin", diğeri "bu
     /// kanaldan hiç sürüm çıkmamış".
     pub channel_empty: bool,
     pub available: bool,
@@ -142,9 +142,9 @@ impl Default for UpdaterState {
 /// Süreç düzeyindeki TLS sağlayıcısını garanti eder.
 ///
 /// `reqwest` `rustls-no-provider` ile derleniyor (sağlayıcıyı eklentiyle
-/// paylaşmak için) ve bu, sağlayıcının süreçte KURULU olmasını şart koşuyor;
+/// paylaşmak için) ve bu, sağlayıcının süreçte kurulu olmasını şart koşuyor;
 /// kurulu değilse istemci oluşturulamıyor. Eklenti bunu kendi istek yolunda
-/// yapıyor ama bizim manifest isteğimiz ondan ÖNCE gidiyor — yani ilk
+/// yapıyor ama bizim manifest isteğimiz ondan önce gidiyor — yani ilk
 /// kontrolde sağlayıcı henüz kurulmuş olmazdı.
 fn ensure_crypto_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
@@ -417,7 +417,7 @@ pub async fn updater_download(
                     },
                 );
 
-                // Yeniden başlatma ŞART: NSIS installer indirme sırasında
+                // Yeniden başlatma şart: NSIS installer indirme sırasında
                 // başlatılıyor ama çalışan .exe bu süreç tarafından kilitli
                 // olduğu sürece üzerine yazamıyor. Kısa bekleme, yukarıdaki
                 // "success" olayının arayüze ulaşması için — `restart` geri

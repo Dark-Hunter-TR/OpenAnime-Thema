@@ -14,6 +14,8 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 
 ![Windows](https://img.shields.io/badge/Windows-Geliştirildi%20%26%20Test%20Edildi-0078D4?style=for-the-badge&logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-AppImage%20%2B%20deb-FCC624?style=for-the-badge&logo=linux&logoColor=black)
 
 [![License](https://img.shields.io/badge/Lisans-MIT-green?style=flat-square)](./LICENSE)
 
@@ -114,9 +116,17 @@ Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranış�
 
 ## <img src="https://api.iconify.design/fluent/arrow-download-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Kurulum
 
-Şu an için yalnızca **Windows**'ta derlenip test edilmiştir. [Releases](https://github.com/Dark-Hunter-TR/OpenAnime-Thema/releases) sekmesinden hazır bir sürüm varsa oradan indirebilir, yoksa aşağıdaki adımlarla kaynaktan derleyebilirsiniz.
+[Releases](https://github.com/Dark-Hunter-TR/OpenAnime-Thema/releases) sekmesinden hazır bir sürüm indirebilir, ya da aşağıdaki adımlarla kaynaktan derleyebilirsiniz. Her yayında üç platform da otomatik derlenip yayınlanıyor:
 
-Tauri'nin platform bağımsız mimarisi nedeniyle macOS/Linux'ta da derlenmesi teorik olarak mümkündür, ancak bu platformlarda doğrulanmamıştır.
+| Platform | Paket | Not |
+| --- | --- | --- |
+| **Windows** (x64) | `.exe` (NSIS kurulumu) | Geliştirildi ve test edildi |
+| **macOS** (Apple Silicon + Intel) | `.dmg` / `.app` | Tek `universal` paket ikisini de kapsar |
+| **Linux** (x64) | `.AppImage`, `.deb` | AppImage medya çerçevesiyle birlikte paketlenir |
+
+> **macOS notu:** paketler Apple tarafından imzalanıp notarize edilmediği için ilk açılışta Gatekeeper uyarı verir. Uygulamaya sağ tıklayıp **Aç** demek ya da *Sistem Ayarları → Gizlilik ve Güvenlik* altından izin vermek yeterli. Güncelleme imzası (minisign) bundan bağımsız ve her platformda doğrulanıyor.
+>
+> **Linux notu:** `.deb` için WebKitGTK 4.1 gerekir (`libwebkit2gtk-4.1-0`). AppImage'ı çalıştırmadan önce `chmod +x` vermeyi unutmayın.
 
 ---
 
@@ -127,6 +137,13 @@ Tauri'nin platform bağımsız mimarisi nedeniyle macOS/Linux'ta da derlenmesi t
 - [Rust](https://www.rust-lang.org/tools/install) (Tauri çekirdeği için)
 - [Bun](https://bun.sh/) *(önerilen)* veya [Node.js/npm](https://nodejs.org/)
 - Tauri v2 sistem bağımlılıkları — bkz. [Tauri Ön Gereksinimleri](https://tauri.app/start/prerequisites/)
+  - **Windows:** WebView2 Runtime (Windows 11'de kurulu gelir) + MSVC derleme araçları
+  - **macOS:** Xcode Command Line Tools. `universal` paket için iki hedef de gerekir:
+    `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
+  - **Linux:** WebKitGTK **4.1** ve paketleme araçları:
+    ```bash
+    sudo apt install libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev       libsoup-3.0-dev libappindicator3-dev librsvg2-dev libxdo-dev       libssl-dev build-essential patchelf file wget
+    ```
 
 ### 2. Klonla & Çalıştır
 
@@ -150,7 +167,15 @@ bun run build:test      # imzasız — "derleniyor mu" sorusunun cevabı
 bun run build:release   # imzalı; TAURI_SIGNING_PRIVATE_KEY şart
 ```
 
-Çıktı: `src-tauri/target/release/bundle/nsis/` altında (özel NSIS kurulumu; MSI üretilmiyor).
+Çıktı `src-tauri/target/release/bundle/` altında, platforma göre:
+
+| Platform | Klasör | Not |
+| --- | --- | --- |
+| Windows | `nsis/` | Özel NSIS kurulumu; MSI üretilmiyor |
+| macOS | `dmg/`, `macos/` | `--target universal-apple-darwin` ile derlenirse `target/universal-apple-darwin/release/bundle/` altında |
+| Linux | `appimage/`, `deb/` | |
+
+Hedefler platform başına `src-tauri/tauri.<platform>.conf.json` dosyalarında; taban `tauri.conf.json` yalnızca ortak ayarları taşıyor. Tauri bu dosyaları derleme hedefine göre kendiliğinden bindiriyor.
 
 `build:release` imzalama anahtarı olmadan **"A public key has been found, but no private key"** ile durur: `tauri.conf.json` bir updater pubkey'i içerdiği ve `createUpdaterArtifacts` açık olduğu için bundler imza arar. Yerelde imzalı paket üretmek gerekirse:
 
@@ -175,7 +200,9 @@ Yalnızca derlemenin geçtiğini görmek istiyorsanız `build:test` yeterli — 
 
 ## <img src="https://api.iconify.design/fluent/cloud-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Yayın Süreci *(bakım yapanlar için)*
 
-`.github/workflows/release.yml`, bir `vX.Y.Z` tag'i push edildiğinde (ya da Actions arayüzünden elle) Windows derlemesini alıp GitHub Releases'e **imzalı** olarak yayınlar. `.github/workflows/test-build.yml` ise bir release oluşturmadan yalnızca derlemenin geçtiğini doğrulamak için elle tetiklenir.
+`.github/workflows/release.yml`, bir `vX.Y.Z` tag'i push edildiğinde (ya da Actions arayüzünden elle) Windows, macOS ve Linux derlemelerini **paralel** alıp GitHub Releases'e **imzalı** olarak yayınlar. `.github/workflows/test-build.yml` ise bir release oluşturmadan yalnızca derlemenin geçtiğini doğrulamak için elle tetiklenir; orada tek bir platform da seçilebilir.
+
+Updater manifesti (`latest.json`) release varlıklarından `scripts/build-updater-manifest.sh` ile **yeniden kuruluyor**. Sebebi: `tauri-action` her derleme işinde kendi `latest.json`'unu yükliyor ve üç iş paralel koştuğu için son biten diğerlerini eziyordu — geriye tek platformluk bir manifest kalıyor, diğer iki platform hiç güncelleme görmüyordu.
 
 **Kanal, tag'in son ekinden türetilir:**
 
@@ -210,7 +237,7 @@ Uygulama içindeki güncelleyici `raw.githubusercontent.com/.../main/updater/lat
 | **Önizleme Köprüsü** | `src-tauri/src/preview_init.js` | Önizleme webview'ine enjekte edilen betik — tema uygulama ve openani.me'nin kendi oturumu üzerinden hesap verisi çekme |
 | **SvelteKit Arayüzü** | `src/` | Editör, ayarlar, ana ekran ve tüm görsel kontroller |
 | **Otomatik Katalog** | `scripts/build-catalog.mjs` | `src/lib/catalog.generated.ts`'i üretir — elle düzenlenmez |
-| **CI/CD** | `.github/workflows/` | Windows için imzalı yayın (`release.yml`) ve derleme doğrulama (`test-build.yml`) |
+| **CI/CD** | `.github/workflows/` | Windows + macOS + Linux için imzalı yayın (`release.yml`) ve derleme doğrulama (`test-build.yml`) |
 
 ---
 

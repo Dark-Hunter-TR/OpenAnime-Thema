@@ -1,10 +1,20 @@
 name: '🧪 Test Build'
 
 # Elle tetiklenir — bir tag/release oluşturmadan derlemenin geçtiğini
-# doğrulamak için. Yalnızca Windows: bkz. README.md -> "Kurulum".
+# doğrulamak için. Windows, macOS ve Linux paralel derlenir.
 on:
   workflow_dispatch:
     inputs:
+      platforms:
+        description: 'Hangi platformlar derlensin'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
+          - linux
       build_mode:
         description: 'Build modu'
         required: true
@@ -29,10 +39,62 @@ env:
   RUSTC_WRAPPER: "sccache"
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  # Matris burada ÜRETİLİYOR, aşağıda sabit yazılmıyor: iş düzeyindeki `if:`
+  # ifadesinde `matrix` bağlamı kullanılamıyor (GitHub yalnızca `github`,
+  # `needs`, `vars` ve `inputs` veriyor), dolayısıyla "sadece Linux derle"
+  # seçimini kombinasyonları eleyerek yapmanın yolu yok. Bunun yerine seçime
+  # göre matrisin kendisini kuruyoruz.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - name: Matrisi seç
+        id: pick
+        env:
+          PLATFORMS: ${{ github.event.inputs.platforms }}
+        run: |
+          all='[
+            {"platform":"windows-latest","label":"Windows-x64","args":""},
+            {"platform":"macos-latest","label":"macOS-universal","args":"--target universal-apple-darwin"},
+            {"platform":"ubuntu-latest","label":"Linux-x64","args":""}
+          ]'
+          case "$PLATFORMS" in
+            windows) sel="$(echo "$all" | jq -c '[.[] | select(.platform == "windows-latest")]')" ;;
+            macos)   sel="$(echo "$all" | jq -c '[.[] | select(.platform == "macos-latest")]')" ;;
+            linux)   sel="$(echo "$all" | jq -c '[.[] | select(.platform == "ubuntu-latest")]')" ;;
+            *)       sel="$(echo "$all" | jq -c '.')" ;;
+          esac
+          echo "matrix=$sel" >> "$GITHUB_OUTPUT"
+          echo "Seçilen: $sel"
+
+  build:
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      # WebKitGTK, Tauri'nin Linux'taki webview motoru — `libwebkit2gtk-4.1`.
+      - name: Linux sistem bağımlılıkları
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            patchelf \
+            file \
+            wget
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.7
@@ -44,6 +106,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -56,11 +120,12 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: ${{ matrix.label }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: |
-            windows-cargo-
+            ${{ matrix.label }}-cargo-
 
       - name: Cache Tauri bundler (NSIS, WiX vb.)
+        if: matrix.platform == 'windows-latest'
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\tauri
@@ -72,9 +137,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun
-          key: windows-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          key: ${{ matrix.label }}-bun-${{ hashFiles('bun.lock', 'package.json') }}
           restore-keys: |
-            windows-bun-
+            ${{ matrix.label }}-bun-
 
       # Sürüm verildiyse derlemeden ÖNCE dosyalara yaz (release.yml ile aynı
       # betik) — paketin, ikilinin ve manifestin sürümü ayrı düşmesin.
@@ -85,6 +150,15 @@ jobs:
 
       - name: Bağımlılıkları yükle
         run: bun install
+
+      # Rust testleri (tema ayrıştırma, önizleme resize betiği) derlemeden
+      # önce — bozuk bir betikle paket üretmenin anlamı yok.
+      - name: Rust testleri
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: Frontend testleri
+        run: bun test src
 
       # Test build BİLEREK imzasız ve `tauri.test.conf.json` ile:
       #
@@ -100,13 +174,15 @@ jobs:
         with:
           releaseDraft: false
           prerelease: false
-          args: --config src-tauri/tauri.test.conf.json ${{ github.event.inputs.build_mode == 'debug' && '--debug' || '' }} --verbose
+          args: --config src-tauri/tauri.test.conf.json ${{ matrix.args }} ${{ github.event.inputs.build_mode == 'debug' && '--debug' || '' }} --verbose
 
       - name: Artifact'leri yükle
         if: github.event.inputs.upload_artifacts == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-x64-${{ github.event.inputs.build_mode }}
-          path: src-tauri/target/${{ github.event.inputs.build_mode == 'debug' && 'debug' || 'release' }}/bundle
+          name: ${{ matrix.label }}-${{ github.event.inputs.build_mode }}
+          path: |
+            src-tauri/target/${{ github.event.inputs.build_mode == 'debug' && 'debug' || 'release' }}/bundle
+            src-tauri/target/universal-apple-darwin/${{ github.event.inputs.build_mode == 'debug' && 'debug' || 'release' }}/bundle
           if-no-files-found: warn
           retention-days: 7

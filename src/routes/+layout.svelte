@@ -82,19 +82,17 @@
 	   border-right sabit 4px — aradaki boşluk (`background-clip:
 	   padding-box`) sırasıyla 2px ve 5px'e çıkıyor, tıpkı sitede olduğu gibi.
 
-	   ## Burada `scrollbar-width` / `scrollbar-color` NEDEN YOK
+	   ## `scrollbar-width` / `scrollbar-color` buraya eklenmemeli
 
-	   DİKKAT — buraya bir daha eklenmemeli. Chromium 121'den beri (bizim
-	   WebView2 151) standart `scrollbar-width`/`scrollbar-color` özellikleri
-	   destekleniyor ve ikisinden HERHANGİ BİRİ `auto` dışında bir değerle
-	   verildiğinde tarayıcı standart çizim yoluna geçip AŞAĞIDAKİ BÜTÜN
-	   `::-webkit-scrollbar-*` kurallarını tamamen yok sayıyor.
+	   Chromium 121'den beri (bizim WebView2 151) standart
+	   `scrollbar-width`/`scrollbar-color` destekleniyor ve ikisinden biri
+	   `auto` dışında bir değer alınca tarayıcı standart çizim yoluna geçip
+	   aşağıdaki tüm `::-webkit-scrollbar-*` kurallarını yok sayıyor.
 
-	   Eskiden burada `scrollbar-width: thin` vardı ve tam olarak bu oluyordu:
-	   Windows 11'in native "Fluent" ince çubuğu çiziliyordu — ok düğmeleri ve
-	   şişkin yuvarlak tutamakla birlikte. `::-webkit-scrollbar-button`'a
-	   yazdığımız `display: none` hiç uygulanmadığı için oklar bir türlü
-	   kaybolmuyordu; CSS ne kadar değiştirilirse değiştirilsin sonuç aynıydı.
+	   Denendiğinde (`scrollbar-width: thin`) sonuç Windows 11'in native
+	   "Fluent" ince çubuğu oluyordu — ok düğmeleri ve yuvarlak tutamakla
+	   birlikte. `::-webkit-scrollbar-button`'a yazılan `display: none` hiç
+	   uygulanmıyor, oklar CSS ne kadar değiştirilirse değiştirilsin kalıyordu.
 
 	   İki API aynı anda kullanılamıyor: sitenin görünümünü birebir taklit eden
 	   border-trick yalnızca `::-webkit-scrollbar` yolunda mümkün olduğu için

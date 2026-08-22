@@ -18,7 +18,10 @@ export const ROUTES: PreviewRoute[] = [
 	{ path: "/", name: "Ana sayfa" },
 	{ path: "/explore", name: "Keşfet" },
 	{ path: "/calendar", name: "Takvim" },
-	{ path: "/4k-releases", name: "4K çıkışlar" },
+	// `/4k-releases` tek BAŞINA 404 veriyor — `/episodes/latest/1` gibi bu da
+	// sayfalanmış bir liste, sayfa numarası segmenti ZORUNLU. Canlı sitede
+	// doğrulandı: `/4k-releases` -> 404, `/4k-releases/1` -> 200.
+	{ path: "/4k-releases/1", name: "4K çıkışlar" },
 	{ path: "/episodes/latest/1", name: "Son bölümler" },
 	{ path: "/episodes/populars/1", name: "Popüler bölümler" },
 	{ path: "/recommendations", name: "Öneriler", auth: true },
@@ -27,11 +30,16 @@ export const ROUTES: PreviewRoute[] = [
 	{ path: "/personalized-playlist", name: "Kişisel liste", auth: true },
 	{ path: "/settings", name: "Ayarlar" },
 	{ path: "/plus", name: "Plus" },
-	{ path: "/login", name: "Giriş" },
-	{ path: "/signup", name: "Kayıt" },
 	{ path: "/about", name: "Hakkında" },
 	{ path: "/tos", name: "Kullanım şartları" }
 ];
+
+// `/login` ve `/signup` bilerek yok — ikisi de canlı sitede 404 veriyor.
+// Sebebi tahmin değil: sitenin giriş/kayıt akışı ayrı bir SAYFA değil,
+// `window.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.openAuthDialog(...)`
+// ile açılan bir DİYALOG (bkz. `preview_init.js` başlığındaki not — aynı
+// köprü zaten uygulamanın kendi `LoginDialog.svelte`'i tarafından kullanılıyor).
+// Yani gidilecek ayrı bir adres hiç yok; kaldırmak eksik değil, doğru davranış.
 
 /**
  * Parametre isteyen route şablonları — adres kutusunda ipucu olarak gösterilir.

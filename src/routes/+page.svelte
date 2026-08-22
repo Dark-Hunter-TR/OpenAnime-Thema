@@ -30,6 +30,7 @@
 	import Icon from "$lib/Icon.svelte";
 	import StatusBar from "$lib/StatusBar.svelte";
 	import { isEnter } from "$lib/events";
+	import GithubImportDialog from "$lib/GithubImportDialog.svelte";
 	import Launcher from "$lib/Launcher.svelte";
 	import NavRail from "$lib/NavRail.svelte";
 	import Section from "$lib/Section.svelte";
@@ -48,6 +49,7 @@
 	import {
 		deleteProject,
 		importCssText,
+		formatUpdated,
 		isUiState,
 		listProjects,
 		loadProject,
@@ -153,7 +155,7 @@
 	 * Ayarlar diskten BİLDİRİMDE okunuyor, `onMount`'ta değil.
 	 *
 	 * Aşağıdaki "her değişimde kaydet" reaktif ifadesi bileşen ilklenirken de
-	 * bir kez çalışıyor ve bu, `onMount` geri çağrılarından ÖNCE oluyor.
+	 * bir kez çalışıyor ve bu, `onMount` geri çağrılarından önce oluyor.
 	 * Yükleme `onMount`'ta yapılsaydı sıra şöyle işlerdi: varsayılanlarla
 	 * başla -> varsayılanları `localStorage`'a YAZ -> sonra oku. Yani her
 	 * açılış kullanıcının kayıtlı ayarlarını siler ve geri varsayılanları
@@ -173,10 +175,24 @@
 	let projectName = "Yeni tema";
 	let projectSource: string | null = null;
 	/**
-	 * Editör sekmesi ancak ortada bir tema varken anlamlı. Açılışta hiçbir şey
-	 * açık değil, dolayısıyla sekme sönük duruyor.
+	 * Editör'de o an gösterilecek bir tema var mı.
+	 *
+	 * `navigate()`'in "Editör'e açık tema olmadan girildi" dalını (Ayarlar'daki
+	 * hızlı başlama seçicisi buradan tetikleniyor) tetikler mi diye bakıyor.
+	 * Ana ekrana dönüldüğünde AŞAĞIDA `false`'a çekiliyor — aksi hâlde bir kez
+	 * proje açıldıktan sonra bu bayrak oturum boyunca `true` kalır ve Editör'e
+	 * her tıklama sessizce o projeyi geri açar; hızlı başlama ayarını
+	 * DEĞİŞTİRSENİZ BİLE hiç devreye girmez, çünkü kapı zaten `!hasOpenProject`
+	 * şartında kapalı kalır.
 	 */
 	let hasOpenProject = false;
+
+	// Ana ekran = "açık tema yok" ekranı. Oraya her dönüşte bayrağı indiriyoruz
+	// ki Editör'e bir sonraki giriş `settings.editorQuickStart` /
+	// `settings.editorStartupAction`'ı YENİDEN değerlendirsin. `view`'ın hangi
+	// yoldan "home" olduğu önemsiz (doğrudan `navigate`, kaydetmeden çık,
+	// kaydedip çık) — hepsi buradan geçiyor.
+	$: if (view === "home") hasOpenProject = false;
 	/**
 	 * En son DİSKE yazılan hâlin imzası. `projectSignature` ile karşılaştırarak
 	 * kaydedilmemiş değişiklik olup olmadığını anlıyoruz — ayrı bir "dirty"
@@ -206,7 +222,7 @@
 	// Tohumlama artık `defaults.ts` üzerinden katalogdaki gerçek --fds-*
 	// varsayılanlarını okuyor ve gelişmiş bölümlerle aynı yolu paylaşıyor.
 
-	// Tohumlama modu bilerek `doc.mode`'dan AYRI tutuluyor. Doğrudan `doc`'u
+	// Tohumlama modu bilerek `doc.mode`'dan ayrı tutuluyor. Doğrudan `doc`'u
 	// okusaydık şöyle bir döngü oluşurdu:
 	//   hoverColors -> doc -> tokenMap -> hoverColors
 	// Bu değişken mod butonlarından ve adoptDoc'tan elle güncelleniyor.
@@ -775,10 +791,10 @@
 		doc = { ...doc, accent: [...hsl] as [number, number, number] };
 	}
 
-	// --- Vurgu rengi: palet ve HSL kaydırıcıları TEK state paylaşır ---------
-	// `doc.accent` (HSL) TEK gerçek kaynak. `accentHex` ondan SALT türetilir
+	// --- Vurgu rengi: palet ve HSL kaydırıcıları tek state paylaşır ---------
+	// `doc.accent` (HSL) tek gerçek kaynak. `accentHex` ondan SALT türetilir
 	// (aşağıdaki `$: accentHex = ...`) — ayrı, elle senkronlanan bir state
-	// DEĞİL. Önceki sürümde `accentHex` kendi başına bir `let` idi ve
+	// değil. Önceki sürümde `accentHex` kendi başına bir `let` idi ve
 	// "uygulanmış değer" (`accentApplied`) bekçisiyle elle senkronlanıyordu;
 	// bu ikili state, paletten (renk alanı/hue şeridi/hex/RGB) seçilen rengin
 	// H/S/L kaydırıcılarına hiç yansımamasına yol açan hataydı — türetme tek
@@ -1015,10 +1031,23 @@
 	 * aynı fonksiyonda olsaydı sıfırlamanın asenkron `push`'u, sonradan
 	 * yüklenen belgenin CSS'ini ezebilirdi — sonuç, kullanıcının içe aktardığı
 	 * temanın bir an görünüp kaybolması olurdu.
+	 *
+	 * `preserveMode`: `doc.mode`'u sıfırlamadan ÖNCEKİ hâliyle korur.
+	 *
+	 * Neden gerekli: Ayarlar -> "Düzenlenen temanın modu" kontrolü (bkz.
+	 * `AppSettings.svelte` -> `onThemeModeChange`) açık proje olmadan da
+	 * çalışıyor — kullanıcı bunu proje bazlı değil, önizlemenin genel bir
+	 * tercihi olarak görüyor. Ama `createProject`/`handleImport` bu
+	 * fonksiyonu ÇAĞIRIYOR ve `defaultDoc()` modu her zaman "dark" veriyor;
+	 * `preserveMode` olmasaydı Ayarlar'da seçilen mod, kullanıcı Editör'e
+	 * girip yeni/içe aktarılan tema oluşturulduğu an sessizce "Koyu"ya
+	 * dönerdi. "Tümünü sıfırla" (`resetAll`) bilerek bunu kullanmıyor —
+	 * o buton adı üstünde, modu da dahil HER ŞEYİ varsayılana döndürmeli.
 	 */
-	function resetState() {
+	function resetState(preserveMode = false) {
+		const mode = preserveMode ? doc.mode : defaultDoc().mode;
 		// Doküman: accent, mod, yarıçaplar, import'lar, tüm ezmeler ve ham CSS.
-		doc = defaultDoc();
+		doc = { ...defaultDoc(), mode };
 		seedMode = doc.mode;
 
 		// Kontrol durumları.
@@ -1056,7 +1085,7 @@
 
 	// --- Proje: durum yakalama ve geri yükleme -------------------------------
 	//
-	// `doc` temanın kendisi, `uiState` ise kontrollerin durumu. İkisini AYRI
+	// `doc` temanın kendisi, `uiState` ise kontrollerin durumu. İkisini ayrı
 	// saklamak zorundayız: bir bölümün KAPALI olması ile açık ama varsayılan
 	// değerde olması aynı CSS'i üretiyor. Yalnız `doc` kaydedilseydi proje
 	// yeniden açıldığında kullanıcı bıraktığı yerde değil, "her şey kapalı"
@@ -1186,7 +1215,7 @@
 			hasOpenProject = true;
 			view = "editor";
 
-			// İmzayı bir tur SONRA alıyoruz: `applyProject` içindeki yeniden
+			// İmzayı bir tur sonra alıyoruz: `applyProject` içindeki yeniden
 			// üretim kontrollerden bir tur daha reaktif akış tetikleyebiliyor ve
 			// erken alınan imza projeyi hemen "değişmiş" gösterirdi.
 			await tick();
@@ -1199,7 +1228,9 @@
 
 	/** Sıfırdan yeni bir tema. Henüz diskte yok; ilk kaydetmede oluşur. */
 	async function createProject() {
-		resetState();
+		// `true`: Ayarlar'da seçilen önizleme modu (bkz. `resetState` başlığı)
+		// yeni temaya taşınsın, sessizce "Koyu"ya dönmesin.
+		resetState(true);
 		projectId = "";
 		projectName = "Yeni tema";
 		projectSource = null;
@@ -1291,15 +1322,86 @@
 	 *   · otomatik kaydet açık + yeni proje    -> ad sor (adsız kaydedilemez)
 	 *   · otomatik kaydet kapalı               -> ne yapılacağını sor
 	 */
+	// --- Editöre başlama seçicisi -------------------------------------------
+	//
+	// Açık tema yokken Editör'e girildiğinde çıkar. Dört yol da ana ekrandakiyle
+	// (ya da, mevcut temada, ana ekranın "Kayıtlı temalar" listesiyle) AYNI
+	// işleyicilere bağlı; burada ikinci bir uygulama yolu yok.
+	let starterOpen = false;
+	let githubImportOpen = false;
+
+	/**
+	 * "Mevcut bir temayı düzenle" — seçiciyi kaydırma listesine çeviren adım.
+	 *
+	 * Diyalog her kapandığında (hangi yoldan olursa olsun: bir eylem seçildi,
+	 * "Geri" ya da "Vazgeç") sıfırlanıyor; aksi hâlde bir sonraki açılışta
+	 * kullanıcı üç düğme yerine bıraktığı yerdeki proje listesini görürdü.
+	 */
+	let pickingExisting = false;
+	$: if (!starterOpen) pickingExisting = false;
+
+	function startNew() {
+		starterOpen = false;
+		createProject();
+	}
+
+	/**
+	 * GitHub'ın kendi içe aktarma diyaloğunu doğrudan açar.
+	 *
+	 * Araya "bağlantıyı gir" diye ikinci bir diyalog konmuyor: o diyalog zaten
+	 * bağlantıyı, dosya seçimini ve proje adını soruyor
+	 * (`GithubImportDialog.svelte`). İkincisi yalnızca bir tıklama fazlası
+	 * olurdu.
+	 */
+	function startFromGithub() {
+		starterOpen = false;
+		githubImportOpen = true;
+	}
+
+	function startFromFile() {
+		starterOpen = false;
+		openFileFromHome();
+	}
+
+	function startFromExisting(id: string) {
+		starterOpen = false;
+		openProject(id);
+	}
+
+	/** "Oluşturma" tarihi — `formatUpdated` gibi göreli değil, MUTLAK tarih.
+	 * Ne zaman oluşturulduğunu bilmek isteyen biri için "3 ay önce" değil
+	 * gerçek tarih anlamlı; göreli biçim zaten "En son güncelleme" satırında
+	 * kullanılıyor, ikisi aynı olsaydı satırlar birbirinin tekrarı olurdu. */
+	function formatCreated(ms: number): string {
+		if (!ms) return "";
+		return new Date(ms).toLocaleDateString("tr-TR", { day: "numeric", month: "short", year: "numeric" });
+	}
+
 	async function navigate(next: NavId) {
 		if (next === view) return;
 
+		// Editör açık bir tema gerektirir. Hangi eylemin çalışacağı
+		// `settings.editorStartupAction`'a bağlı (bkz. Ayarlar -> Tema editörü);
+		// "ask" dışındaki üç seçenek seçiciyi hiç göstermeden doğrudan o eylemi
+		// başlatıyor.
 		if (next === "editor" && !hasOpenProject) {
-			if (projects.length > 0) {
-				await openProject(projects[0].id);
-			} else {
-				await createProject();
+			// Hızlı başlama kapalıysa (varsayılan) ya da açık olup "Her zaman
+			// sor" seçiliyse davranış aynı: seçici çıkar.
+			const action = settings.editorQuickStart ? settings.editorStartupAction : "ask";
+			switch (action) {
+				case "new":
+					startNew();
+					break;
+				case "github":
+					startFromGithub();
+					break;
+				case "file":
+					startFromFile();
+					break;
+				default:
+					starterOpen = true;
 			}
+			return;
 		}
 
 		if (view === "editor" && dirty) {
@@ -1320,6 +1422,16 @@
 		}
 
 		view = next;
+	}
+
+	/**
+	 * Başlık çubuğundaki geri oku (yalnızca Editör'de görünür — bkz.
+	 * `TitleBar` -> `onBack`). `navigate("home")` ile aynı: kaydedilmemiş
+	 * değişiklik varsa kaydet/çık sorusu çıkar, otomatik kaydetme açıksa
+	 * sessizce kaydedip döner.
+	 */
+	function backToHome() {
+		navigate("home");
 	}
 
 	function leaveWithoutSaving() {
@@ -1372,7 +1484,9 @@
 		try {
 			// `resetAll` değil: onun asenkron yeniden üretimi, aşağıda yüklenen
 			// temanın CSS'ini ezebilirdi (bkz. `resetState` başlığındaki not).
-			resetState();
+			// `true`: Ayarlar'daki önizleme modu, içe aktarılan CSS modu
+			// belirtmiyorsa korunsun.
+			resetState(true);
 			await tick();
 
 			const next = await importCssText(payload.css, KNOWN_SELECTORS);
@@ -1451,7 +1565,7 @@
 	/**
 	 * Çıkış tamamlandı: oturum durumunu hemen tazele.
 	 *
-	 * Kısa bir bekleme var, çünkü köprü çerezleri sildikten SONRA önizlemeyi
+	 * Kısa bir bekleme var, çünkü köprü çerezleri sildikten sonra önizlemeyi
 	 * yeniliyor (bkz. `preview_init.js` -> `__OA_API_LOGOUT__`). Hemen
 	 * sorsaydık `preview_login_state` çerez kavanozunu yenileme başlamadan
 	 * okuyabilir ve kullanıcıyı hâlâ giriş yapmış gösterebilirdi. 3 sn'lik
@@ -1563,14 +1677,16 @@
 	// Önizleme `add_child` ile eklenmiş NATİF bir webview ve her zaman host
 	// sayfanın İÇERİĞİNİN ÜSTÜNE çiziliyor (bkz. `preview.rs`) — z-index onu
 	// etkilemiyor. Bu yüzden ekranı kaplayan her diyalog burada listelenmek
-	// ZORUNDA; listelenmezse diyalog açılır ama önizlemenin altında kalır.
+	// zorunda; listelenmezse diyalog açılır ama önizlemenin altında kalır.
 	$: modalOpen =
 		confirmLeave ||
 		namingOpen ||
 		confirmResetAll ||
 		aboutDialogOpen ||
 		updateDialogOpen ||
-		loginDialogOpen;
+		loginDialogOpen ||
+		starterOpen ||
+		githubImportOpen;
 	$: syncPreviewVisibility(view, modalOpen);
 
 	async function syncPreviewVisibility(current: NavId, blocked: boolean) {
@@ -1587,8 +1703,8 @@
 	}
 
 	// Editör görünümü kurulup `previewSlot` DOM'a girdiğinde ölçümü başlat,
-	// çıktığında bırak. Eskiden bu `onMount`'taydı; artık slot her zaman var
-	// olmadığı için yaşam döngüsüne değil elemanın varlığına bağlıyoruz.
+	// çıktığında bırak. Slot yalnızca Editör'deyken var olduğu için bileşenin
+	// yaşam döngüsüne değil elemanın varlığına bağlanıyor.
 	let slotObserver: ResizeObserver | null = null;
 
 	$: if (previewSlot && !slotObserver) {
@@ -1666,12 +1782,11 @@
 </script>
 
 <div class="app">
-	<TitleBar title={titleContext} />
+	<TitleBar title={titleContext} onBack={view === "editor" ? backToHome : null} />
 
 	<div class="body">
 		<NavRail
 			current={view}
-			editorEnabled={hasOpenProject}
 			aboutOpen={aboutDialogOpen}
 			onNavigate={navigate}
 			onOpenAbout={() => (aboutDialogOpen = true)}
@@ -1706,6 +1821,8 @@
 				onLogin={openLoginDialog}
 				{onLoggedOut}
 				{loggedIn}
+				themeMode={doc.mode}
+				onThemeModeChange={setMode}
 				onCheckForUpdates={() => runUpdateCheck(true)}
 				{updateCheckStatus}
 				{updateCheckError}
@@ -2109,6 +2226,68 @@
 </div>
 
 <!-- --- Proje adı ------------------------------------------------------- -->
+<!-- --- Editöre başlama seçicisi ----------------------------------------- -->
+<ContentDialog
+	bind:open={starterOpen}
+	title={pickingExisting ? "Hangi tema?" : "Ne yapmak istersiniz?"}
+	size="standard"
+>
+	<div class="starter">
+		{#if !pickingExisting}
+			<TextBlock variant="caption" class="text-secondary">
+				Devam etmek için bir tema gerekiyor. Nasıl başlamak istersiniz?
+			</TextBlock>
+
+			<Button variant="accent" on:click={startNew}>
+				<Icon name="add" size={16} /><span class="gap">Yeni tema oluştur</span>
+			</Button>
+			<Button on:click={startFromGithub}>
+				<Icon name="github" size={16} /><span class="gap">GitHub'dan içe aktar</span>
+			</Button>
+			<Button on:click={startFromFile}>
+				<Icon name="open" size={16} /><span class="gap">CSS dosyası aç…</span>
+			</Button>
+
+			{#if projects.length}
+				<Button on:click={() => (pickingExisting = true)}>
+					<Icon name="navEditor" size={16} /><span class="gap"
+						>Mevcut bir temayı düzenle ({projects.length})</span
+					>
+				</Button>
+			{/if}
+		{:else}
+			<!-- Ana ekrandaki kart ızgarasının küçültülmüş hâli değil, tek sütunlu
+			     bir liste: bu diyalog dar (size="standard") ve kartların önizleme
+			     şeridi burada yer kaplayan, katkısı düşük bir ayrıntı olurdu. -->
+			<div class="starter-projects">
+				{#each projects as project (project.id)}
+					<button
+						type="button"
+						class="starter-project"
+						on:click={() => startFromExisting(project.id)}
+					>
+						<TextBlock variant="bodyStrong">{project.name}</TextBlock>
+						<TextBlock variant="caption" class="text-secondary">
+							Oluşturma: {formatCreated(project.createdAt)} · En son güncelleme: {formatUpdated(
+								project.updatedAt
+							)}
+						</TextBlock>
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	<svelte:fragment slot="footer">
+		{#if pickingExisting}
+			<Button on:click={() => (pickingExisting = false)}>Geri</Button>
+		{/if}
+		<Button on:click={() => (starterOpen = false)}>Vazgeç</Button>
+	</svelte:fragment>
+</ContentDialog>
+
+<GithubImportDialog bind:open={githubImportOpen} onImport={handleImport} />
+
 <ContentDialog bind:open={namingOpen} title="Projeyi kaydet" size="standard">
 	<!-- svelte-ignore a11y-label-has-associated-control -->
 	<label>
@@ -2377,6 +2556,53 @@
 		border-radius: 50%;
 		display: inline-block;
 		margin-right: 6px;
+	}
+
+	/* Seçici: üç yol alt alta ve eşit genişlikte. Yan yana dizilseydi en uzun
+	   etiket ("CSS dosyası aç…") diğerlerini ezer, hangisinin birincil yol
+	   olduğu da kaybolurdu. */
+	.starter {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.starter :global(.button) {
+		justify-content: flex-start;
+	}
+
+	/* Proje listesi: diyalog dar olduğu için ana ekrandaki kart ızgarası değil,
+	   satır satır bir liste — her satır tek başına tıklanabilir bir düğme. */
+	.starter-projects {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		max-height: 320px;
+		overflow-y: auto;
+	}
+
+	.starter-project {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+		width: 100%;
+		box-sizing: border-box;
+		padding: 8px 12px;
+		border: none;
+		border-radius: var(--fds-control-corner-radius);
+		background: transparent;
+		cursor: pointer;
+		text-align: left;
+		transition: background-color var(--fds-control-fast-duration) ease;
+	}
+
+	.starter-project:hover {
+		background-color: var(--fds-subtle-fill-secondary);
+	}
+
+	.starter-project:active {
+		background-color: var(--fds-subtle-fill-tertiary);
 	}
 
 	.gap {

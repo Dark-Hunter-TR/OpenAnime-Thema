@@ -233,7 +233,7 @@ struct AccountReply {
 
 /// Köprüyü tetikler ve `request_id` ile eşleşen yanıtı bekler.
 ///
-/// `bridge_get` ile `account_login` arasındaki TEK ortak parça bu: benzersiz
+/// `bridge_get` ile `account_login` arasındaki tek ortak parça bu: benzersiz
 /// bir istek kimliği üretmek, dinleyiciyi kurmak, tetiklemek, zaman aşımıyla
 /// beklemek. İkisinin ayrıştığı yer `stage` yorumlaması — o yüzden burası ham
 /// `AccountReply` döndürüyor, karar çağırana ait.
@@ -262,7 +262,7 @@ where
         NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
 
-    // Dinleyici, köprü tetiklenmeden ÖNCE kurulmalı: sayfa çerezi ve geçit
+    // Dinleyici, köprü tetiklenmeden önce kurulmalı: sayfa çerezi ve geçit
     // token'ı hazırsa yanıt aynı tur içinde dönebiliyor.
     let (tx, rx) = tokio::sync::oneshot::channel::<AccountReply>();
     let slot = std::sync::Mutex::new(Some(tx));
@@ -467,7 +467,7 @@ struct QrEvent {
 /// Zaman aşımı 40 sn, sayfa tarafındaki 25 sn'lik yoklamadan uzun — böylece
 /// olay yokken bile yanıtı sayfa veriyor (`"idle"`) ve arayüz gerçek bir zaman
 /// aşımı hatası görmüyor. Kullanıcının kodu okutması dakikalar sürebileceği
-/// için akışın kendisinin bir süre sınırı YOK; `account_qr_stop` ile kapanıyor.
+/// için akışın kendisinin bir süre sınırı yok; `account_qr_stop` ile kapanıyor.
 #[tauri::command]
 async fn account_qr_next(app: AppHandle) -> Result<QrEvent, String> {
     let reply = bridge_await(&app, 40, preview::request_qr_next).await?;
@@ -675,7 +675,7 @@ pub fn run() {
             // boyuttan küçük ekranlarda (ör. 1366x768 dizüstü) pencerenin
             // taşmasına ya da görev çubuğunun altına inmesine yol açıyordu.
             //
-            // `preview::create`'DEN ÖNCE çalışmalı: o fonksiyon önizleme
+            // `preview::create`'DEN önce çalışmalı: o fonksiyon önizleme
             // webview'inin ilk boyutunu ana pencerenin O ANKİ `inner_size`'ına
             // göre hesaplıyor (bkz. preview.rs -> FALLBACK_PANEL_WIDTH). Sırayı
             // tersine çevirirsek önizleme bir kare eski (küçültülmeden önceki)
@@ -717,7 +717,7 @@ pub fn run() {
             };
             preview::create(app.handle(), &doc)?;
 
-            // Burada bir oturum tazeleme döngüsü YOK ve olmamalı.
+            // Burada bir oturum tazeleme döngüsü yok ve olmamalı.
             //
             // Önceden 58 saniyede bir `POST /user/refresh` çağıran bir kalp atışı
             // vardı; iki ayrı sebeple kaldırıldı. Birincisi: istek Rust'tan
@@ -737,4 +737,58 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Platforma özgü yapılandırma dosyalarının tutarlılık koruması.
+///
+/// Tauri, `tauri.<platform>.conf.json` dosyalarını tabana JSON Merge Patch
+/// (RFC 7386) ile bindiriyor ve o kuralda **diziler birleştirilmez, komple
+/// değiştirilir**. `app.windows` bir dizi olduğu için `tauri.macos.conf.json`
+/// pencere tanımının TAMAMINI tekrarlamak zorunda; yalnızca `titleBarStyle`
+/// yazıp gerisini tabandan miras almak mümkün değil.
+///
+/// Bu da sessiz bir tuzak yaratıyor: taban dosyada pencere boyutu değişirse
+/// macOS eski değerde kalır ve kimse fark etmez. Aşağıdaki test, ikisinin
+/// bilerek FARKLI olması gereken alanları dışarıda bırakıp geri kalanının
+/// eşitliğini sabitliyor.
+#[cfg(test)]
+mod platform_config {
+    use serde_json::Value;
+
+    const BASE: &str = include_str!("../tauri.conf.json");
+    const MACOS: &str = include_str!("../tauri.macos.conf.json");
+
+    fn main_window(conf: &str) -> Value {
+        let v: Value = serde_json::from_str(conf).expect("yapılandırma ayrıştırılamadı");
+        v["app"]["windows"]
+            .as_array()
+            .expect("app.windows dizisi yok")
+            .iter()
+            .find(|w| w["label"] == "main")
+            .expect("'main' penceresi yok")
+            .clone()
+    }
+
+    #[test]
+    fn macos_window_config_does_not_diverge_from_base() {
+        // macOS'ta bilerek farklı olanlar: sistemin trafik ışıkları
+        // gösterilebilsin diye pencere dekorasyonlu açılıyor ve başlık
+        // içeriğin üstüne biniyor (bkz. `TitleBar.svelte` -> `isMac`).
+        const PLATFORM_SPECIFIC: [&str; 3] = ["decorations", "titleBarStyle", "hiddenTitle"];
+
+        let base = main_window(BASE);
+        let macos = main_window(MACOS);
+
+        for (key, value) in base.as_object().expect("pencere nesnesi") {
+            if PLATFORM_SPECIFIC.contains(&key.as_str()) {
+                continue;
+            }
+            assert_eq!(
+                macos.get(key),
+                Some(value),
+                "tauri.macos.conf.json içindeki `{key}` tabandan ayrı düşmüş — \
+                 dizi alanları merge edilmediği için elle eşitlenmesi gerekiyor"
+            );
+        }
+    }
 }

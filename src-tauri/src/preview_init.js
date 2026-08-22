@@ -21,7 +21,7 @@
  *
  * Bu yüzden görünürlüğü sayfaya karşı sabitliyoruz. Webview YİNE de native
  * olarak gizli — yalnızca sayfanın kendi kapısı açılıyor. Betik sitenin
- * kendi kodundan ÖNCE çalıştığı için `I()` ilk kontrolünde geçiyor.
+ * kendi kodundan önce çalıştığı için `I()` ilk kontrolünde geçiyor.
  *
  * Yan etkisi bilinçli: sayfa artık kendini hiç arka planda saymıyor, yani
  * sitenin 8 dakikalık oturum tazeleme mutex'i ve 35 saniyelik geçit
@@ -418,7 +418,7 @@
 	 * bayatsa bile çıkış YİNE de çalışıyor — tersi olsaydı, oturumu kapatmak
 	 * isteyen kullanıcı geçidin toparlanmasını beklemek zorunda kalırdı.
 	 *
-	 * `refreshToken` çerez silinmeden ÖNCE okunuyor; sunucunun onu iptal
+	 * `refreshToken` çerez silinmeden önce okunuyor; sunucunun onu iptal
 	 * edebilmesi için değere ihtiyacı var.
 	 *
 	 * Sonunda sayfa yenileniyor: çerezler gitse de sitenin kendi bellekteki
@@ -609,7 +609,7 @@
 				return;
 			}
 			if (waited >= 25000) {
-				// Rust tarafındaki bekleme 30 sn; ondan ÖNCE yanıt vermeliyiz ki
+				// Rust tarafındaki bekleme 30 sn; ondan önce yanıt vermeliyiz ki
 				// arayüz zaman aşımı hatası görmesin, sadece döngüyü sürdürsün.
 				reply({ kind: "idle" });
 				return;

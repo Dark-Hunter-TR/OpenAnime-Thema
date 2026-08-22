@@ -1,7 +1,7 @@
 name: '🚀 Publish'
 
 # Tag push edildiğinde otomatik build + yayın, ya da GitHub Actions
-# arayüzünden elle tetiklenir. Yalnızca Windows: bkz. README.md -> "Kurulum".
+# arayüzünden elle tetiklenir. Windows, macOS ve Linux paralel derleniyor.
 #
 # Kanal, tag'in ön-sürüm son ekinden türetilir:
 #   v1.0.0          -> stable
@@ -126,17 +126,106 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ────────────────────────────────────────────────────
-  # 2) Derle + TASLAK release'e yayınla
+  # 2) Taslak release'i ÖNCEDEN aç
+  #
+  # Üç platform paralel derlendiği için bu adım şart: `tauri-action` release
+  # yoksa kendisi oluşturuyor ve aynı anda başlayan üç iş aynı tag'i yaratmaya
+  # çalışınca biri 422 ile düşüyor. Release'i burada tek seferde açıp aşağıya
+  # yalnızca `releaseId` geçiyoruz.
+  # ────────────────────────────────────────────────────
+  create-release:
+    needs: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.mk.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Taslak release'i oluştur (varsa yeniden kullan)
+        id: mk
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          # Taslak release'ler `releases/tags/<tag>` ile BULUNAMIYOR (o uç nokta
+          # yalnızca yayınlanmışlara bakıyor); bu yüzden liste üzerinden arıyoruz.
+          find_id() {
+            gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+              --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -1
+          }
+
+          ID="$(find_id)"
+          if [ -z "$ID" ]; then
+            PRE_FLAG=""
+            [ "$PRERELEASE" = "true" ] && PRE_FLAG="--prerelease"
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --draft $PRE_FLAG \
+              --target "$GITHUB_SHA" \
+              --notes "Otomatik yayın — varlıklar yükleniyor…"
+            ID="$(find_id)"
+          fi
+
+          if [ -z "$ID" ]; then
+            echo "::error::Taslak release oluşturulamadı."
+            exit 1
+          fi
+          echo "release_id=$ID" >> "$GITHUB_OUTPUT"
+          echo "Taslak release id: $ID"
+
+  # ────────────────────────────────────────────────────
+  # 3) Derle + TASLAK release'e yükle (3 platform paralel)
   # ────────────────────────────────────────────────────
   build:
-    needs: prepare
-    runs-on: windows-latest
+    needs: [prepare, create-release]
     permissions:
       contents: write
+    strategy:
+      # Bir platform patlarsa diğerlerinin sonucunu da görmek istiyoruz;
+      # eksik platformu aşağıdaki manifest işi zaten yakalıyor.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            label: Windows-x64
+            args: ''
+          # Tek `universal` derleme hem Apple Silicon hem Intel'i kapsıyor.
+          # İki ayrı mimari işi çalıştırmak, ikisinin de AYNI adla
+          # (`OpenAnime Theme.app.tar.gz`) release'e yüklenmesi ve birbirini
+          # ezmesi demekti.
+          - platform: macos-latest
+            label: macOS-universal
+            args: '--target universal-apple-darwin'
+          - platform: ubuntu-latest
+            label: Linux-x64
+            args: ''
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # WebKitGTK, Tauri'nin Linux'taki webview motoru — `libwebkit2gtk-4.1`.
+      # `libxdo` global kısayollar, `patchelf` AppImage paketlemesi için.
+      - name: Linux sistem bağımlılıkları
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            patchelf \
+            file \
+            wget
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.7
@@ -148,6 +237,10 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # `universal-apple-darwin` bir "fat binary" — Tauri iki mimariyi ayrı
+          # ayrı derleyip birleştiriyor, dolayısıyla İKİ hedef de kurulu olmalı.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -155,10 +248,11 @@ jobs:
           bun-version: 1.x
 
       - name: Cache Tauri bundler (NSIS, WiX vb.)
+        if: matrix.platform == 'windows-latest'
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\tauri
-          key: windows-tauri-bundler-${{ hashFiles('src-tauri/tauri.conf.json') }}
+          key: windows-tauri-bundler-${{ hashFiles('src-tauri/tauri.conf.json', 'src-tauri/tauri.windows.conf.json') }}
           restore-keys: |
             windows-tauri-bundler-
 
@@ -168,17 +262,17 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: ${{ matrix.label }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: |
-            windows-cargo-
+            ${{ matrix.label }}-cargo-
 
       - name: Cache Bun
         uses: actions/cache@v4
         with:
           path: ~/.bun
-          key: windows-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          key: ${{ matrix.label }}-bun-${{ hashFiles('bun.lock', 'package.json') }}
           restore-keys: |
-            windows-bun-
+            ${{ matrix.label }}-bun-
 
       # Sürüm alanları derlemeden ÖNCE yazılıyor: paketin, ikilinin ve updater
       # manifestinin sürümü birbirine uymak zorunda. Depodaki değer ne olursa
@@ -191,52 +285,74 @@ jobs:
         run: bun install
 
       # `createUpdaterArtifacts: true` zaten tauri.conf.json'da — tauri-action
-      # imzalama secret'ları verildiğinde latest.json + .sig dosyalarını
-      # üretip release'e ekliyor. Secret eksikse manifest hiç üretilmez ve
-      # aşağıdaki doğrulama işi BİLEREK patlar.
-      - name: Derle & Yayınla (imzalı)
+      # imzalama secret'ları verildiğinde .sig dosyalarını üretip release'e
+      # ekliyor. Secret eksikse imza hiç üretilmez ve aşağıdaki manifest işi
+      # BİLEREK patlar.
+      - name: Derle & Yükle (imzalı)
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ needs.prepare.outputs.tag }}
-          releaseName: ${{ needs.prepare.outputs.tag }}
-          releaseDraft: true
-          prerelease: ${{ needs.prepare.outputs.prerelease }}
-          args: --verbose
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }} --verbose
 
   # ────────────────────────────────────────────────────
-  # 3) latest.json'un gerçekten üretildiğini doğrula
+  # 4) Çok platformlu updater manifestini kur ve doğrula
+  #
+  # tauri-action her işte kendi latest.json'unu yükleyip diğerlerini eziyor;
+  # bu yüzden manifesti release varlıklarından yeniden kuruyoruz
+  # (bkz. scripts/build-updater-manifest.sh).
   # ────────────────────────────────────────────────────
-  verify-manifest:
+  updater-manifest:
     needs: [prepare, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: latest.json release'de var mı?
+      - uses: actions/checkout@v4
+
+      - name: Manifesti üret
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download "${{ needs.prepare.outputs.tag }}" \
-            --repo "${{ github.repository }}" \
-            --pattern "latest.json" \
-            --output latest.json \
-            --clobber || true
-          if [ ! -s latest.json ]; then
-            echo "::error::latest.json release'de yok ya da boş — imzalama secret'ları eksik/yanlış olabilir. Yayın durduruldu."
-            exit 1
-          fi
-          echo "latest.json bulundu:"
-          cat latest.json
+          bash scripts/build-updater-manifest.sh \
+            "${{ needs.prepare.outputs.tag }}" \
+            "${{ needs.prepare.outputs.version }}" \
+            latest.json
+
+      # Üç platformun da manifeste girdiğini doğruluyoruz. Eksik bir anahtar,
+      # o platformdaki kullanıcının hiç güncelleme almaması demek — sessizce
+      # geçilecek bir durum değil.
+      - name: Bütün platformlar var mı?
+        run: |
+          missing=0
+          for key in windows-x86_64 darwin-aarch64 darwin-x86_64 linux-x86_64; do
+            if ! jq -e --arg k "$key" '.platforms[$k].url' latest.json >/dev/null; then
+              echo "::error::Manifestte $key eksik"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - name: Manifesti release'e yükle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ needs.prepare.outputs.tag }}" latest.json \
+            --repo "${{ github.repository }}" --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: updater-manifest
+          path: latest.json
 
   # ────────────────────────────────────────────────────
-  # 4) Taslak release'i canlıya al
+  # 5) Taslak release'i canlıya al
   # ────────────────────────────────────────────────────
   publish-release:
-    needs: [prepare, build, verify-manifest]
+    needs: [prepare, build, updater-manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -250,7 +366,7 @@ jobs:
             --repo "${{ github.repository }}"
 
   # ────────────────────────────────────────────────────
-  # 5) Kanal manifestini main'e commit'le
+  # 6) Kanal manifestini main'e commit'le
   #
   # Uygulama bu dosyaları okuyor: updater/latest-<kanal>.json
   # (bkz. src-tauri/src/updater.rs). Yalnızca YAYINLANAN kanalın dosyası
@@ -258,7 +374,7 @@ jobs:
   # görmemesinin tek ve yeterli sebebi bu.
   # ────────────────────────────────────────────────────
   update-channel-manifest:
-    needs: [prepare, verify-manifest, publish-release]
+    needs: [prepare, updater-manifest, publish-release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -267,16 +383,19 @@ jobs:
         with:
           ref: main
 
-      - name: Yayınlanan latest.json'u indir
+      - name: Birleştirilmiş manifesti indir
+        uses: actions/download-artifact@v4
+        with:
+          name: updater-manifest
+          path: manifest-artifact
+
+      - name: Kanal dosyasına yerleştir
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
         run: |
           mkdir -p updater
-          gh release download "${{ needs.prepare.outputs.tag }}" \
-            --repo "${{ github.repository }}" \
-            --pattern "latest.json" \
-            --output "updater/latest-${{ needs.prepare.outputs.channel }}.json" \
-            --clobber
+          cp manifest-artifact/latest.json "updater/latest-${CHANNEL}.json"
+          rm -rf manifest-artifact
 
       - name: Değişikliği main'e commit'le
         env:
@@ -291,6 +410,6 @@ jobs:
               || echo "Değişiklik yok, commit edilmedi."
             git push origin main || { echo "::error::git push başarısız oldu"; exit 1; }
           else
-            echo "::error::Kanal manifesti indirilemedi."
+            echo "::error::Kanal manifesti hazırlanamadı."
             exit 1
           fi

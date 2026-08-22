@@ -1760,7 +1760,7 @@ export const SITE_IDS: string[] = [
 	"version-table"
 ];
 
-/** Sitenin fds dışı custom property'leri. Stable API DEĞİL — çoğu
+/** Sitenin fds dışı custom property'leri. Stable API değil — çoğu
  *  Svelte scoped selector'lara bağlı ve her deploy'da değişebilir. */
 export const SITE_VARS: string[] = [
 	"--border-radius",

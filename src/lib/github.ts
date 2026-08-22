@@ -1,7 +1,7 @@
 /**
  * GitHub bağlantısından tema (.css) çekme.
  *
- * Ağ çağrısı neden Rust'ta DEĞİL: `raw.githubusercontent.com` ve
+ * Ağ çağrısı neden Rust'ta değil: `raw.githubusercontent.com` ve
  * `api.github.com` ikisi de `Access-Control-Allow-Origin: *` gönderiyor ve
  * uygulamanın CSP'si kapalı (`tauri.conf.json` -> `security.csp: null`), yani
  * webview'den doğrudan `fetch` etmenin önünde engel yok. Rust tarafında yapmak

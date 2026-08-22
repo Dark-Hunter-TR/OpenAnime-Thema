@@ -9,7 +9,7 @@
 	 * Yalnızca SV alanı ham bir div — Fluent'te karşılığı olmayan tek parça;
 	 * o da rengini yine `--fds-*` token'larından alıyor.
 	 *
-	 * Tek state kuralı: dışarıya SADECE `hex` bağlanır. HSV yalnızca bu
+	 * Tek state kuralı: dışarıya sadece `hex` bağlanır. HSV yalnızca bu
 	 * bileşenin içinde, kullanıcı sürüklerken tutulur — böylece HSL
 	 * kaydırıcıları, hex kutusu ve palet aynı değeri gösterir, biri
 	 * diğerini ezmez.

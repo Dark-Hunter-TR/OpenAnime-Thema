@@ -262,7 +262,7 @@ pub fn set_bounds(app: &AppHandle, x: f64, y: f64, width: f64, height: f64) -> t
     let size_changed = previous.map(|(_, _, pw, ph)| pw != width || ph != height).unwrap_or(true);
 
     // Eşiğin hangi yakasında olduğumuz değişti mi? Karşılaştırmayı bounds'u
-    // kaydetmeden ÖNCE yapıyoruz; `previous` bir sonraki satırda eziliyor.
+    // kaydetmeden önce yapıyoruz; `previous` bir sonraki satırda eziliyor.
     let crossed_breakpoint = previous
         .map(|(_, _, pw, _)| is_mobile_width(pw) != is_mobile_width(width))
         .unwrap_or(false);
@@ -273,7 +273,7 @@ pub fn set_bounds(app: &AppHandle, x: f64, y: f64, width: f64, height: f64) -> t
         // Site mobil/masaüstü ayrımını `window.innerWidth` + bir `resize`
         // dinleyicisiyle yapıyor (bkz. PLAN.md §0.4 civarındaki bundle analizi).
         //
-        // Buradaki incelik: olayı `set_size`'dan HEMEN sonra göndermek işe yaramaz,
+        // Buradaki incelik: olayı `set_size`'dan hemen sonra göndermek işe yaramaz,
         // çünkü WebView2 yeni bounds'u henüz uygulamamış olabiliyor; site eski
         // genişliği okuyup mobil düzende takılı kalıyor ve öğeler geniş çerçevede
         // üst üste biniyor. Bu yüzden olayı sayfanın kendi içinde iki kare
@@ -297,29 +297,46 @@ fn is_mobile_width(width: f64) -> bool {
     width < SITE_MOBILE_BREAKPOINT
 }
 
-/// Boyut değişimini sayfaya YUMUŞAK biçimde bildirir — reload YOK.
+/// Boyut değişimini sayfaya bildirir; mobil eşiği geçildiyse yeniden yükletir.
 ///
-/// Burada eskiden `location.reload()` vardı: mobil eşiği geçilince sitenin
-/// kaydırma altyapısı yeniden kurulmadığı için sayfa kilitleniyordu ve reload
-/// tek çare gibi görünmüştü. Ama reload, tam sayfa yeniden yükleme + splash
-/// ekranı demek; görünüm değiştirmeyi ağır ve kesintili yapıyordu.
+/// ## Eşik geçilmediyse — kesintisiz
 ///
-/// Yerine üç adımlı, kesintisiz bir yol:
+/// Tablet <-> Masaüstü geçişi ve splitter sürüklemesi sitenin mobil dalını
+/// değiştirmiyor; yalnızca `resize` + `orientationchange` gönderiliyor.
 ///
-/// 1. **`resize` + `orientationchange`** — sitenin kendi mekanizması. Mobil
-///    algılama `window.innerWidth < 768` + bir `resize` dinleyicisi; bunu
-///    tetiklemek DOM'un doğru dala geçmesi için yeterli. Olayı iki kare
-///    sonrasına erteliyoruz, çünkü WebView2 yeni bounds'u hemen uygulamıyor.
-/// 2. **`matchMedia` uyandırma** — bazı bileşenler genişliği `matchMedia` ile
-///    izliyor. Sorgular otomatik değerlendirilir ama dinleyicilerin sırayla
-///    çalışabilmesi için ek bir kare bırakıyoruz.
-/// 3. **Kaydırma onarımı (yalnızca eşik geçildiyse)** — site `html, body`'ye
-///    `overflow: hidden` verip kaydırmayı OverlayScrollbars'ın viewport
-///    elemanına devrediyor. Eşik geçişinde o eleman yeniden kurulmazsa
-///    kaydırılabilir hiçbir şey kalmıyor. Bunu ÖLÇEREK tespit ediyoruz
-///    (içerik görünümden uzun mu, kaydırılabilir kap var mı) ve yalnızca
-///    gerçekten bozuksa native kaydırmayı geri açan küçük bir stil enjekte
-///    ediyoruz. Sorun yoksa hiçbir şey yapılmıyor ve stil geri alınıyor.
+/// ## Eşik geçildiyse — yeniden yükleme
+///
+/// Sitenin masaüstü yerleşimi açılışta kurulan bir yükseklik zincirine bağlı:
+///
+/// ```text
+/// html[data-overlayscrollbars~=body] > body { height: 100% }
+///   #page        { display:flex; height:100%; overflow:hidden }
+///     #page > div { display:flex; height:100% }
+///       .sidebar  { min-width:4.5rem; height:100% }
+/// ```
+///
+/// Kaydırmanın sahibi OverlayScrollbars ve o, sayfa açılırken o anki genişliğe
+/// göre kuruluyor. Mobil eşiği geçilince site `body.mobile-patches`
+/// (`height:100vh; overflow-y:auto`) ile native kaydırmaya dönüyor; geri
+/// dönüldüğünde zincirin tepesi yeniden kurulmuyor. Body'nin kesin yüksekliği
+/// kalmayınca `#page{height:100%}` `auto`ya düşüyor, `.sidebar` belge boyu
+/// uzuyor ve `justify-content:space-between` yüzünden ortası boşalıyor —
+/// kullanıcının gördüğü "sol menü kayboldu" tam olarak bu.
+///
+/// ### Neden CSS enjeksiyonu değil
+///
+/// Burada bir zamanlar `html,body{overflow-y:auto!important;height:auto!important}`
+/// vardı ve `height:auto` zinciri onarmak yerine KIRIYORDU; hatanın bir kısmı
+/// doğrudan o satırdan geliyordu. Doğru yükseklikleri (`height:100%`) zorla
+/// geri yazmak da yetmiyor: OverlayScrollbars viewport elemanı yokken
+/// `#page{overflow:hidden}` ile sayfada kaydırılabilir hiçbir şey kalmıyor.
+/// Yani yerleşim ve kaydırma dışarıdan tek bir stille tutarlı biçimde
+/// kurulamıyor; sitenin kendi önyükleme zinciri gerekiyor ve onu tetiklemenin
+/// tek yolu yeniden yükleme.
+///
+/// Bedeli yalnızca Mobil <-> (Tablet|Masaüstü) geçişinde görünen kısa bir
+/// splash ekranı. `preview_init.js` her navigasyonda yeniden enjekte edildiği,
+/// `on_page_load` da temayı geri bastığı için tema ve oturum korunuyor.
 fn soft_resize<R: Runtime>(webview: &Webview<R>, crossed_breakpoint: bool) {
     // Yer tutucuyu `init_script`'teki kalıpla değiştiriyoruz. JS'i `format!`
     // içine gömmek her süslü parantezi ikilemeyi gerektirirdi — bu betikte
@@ -373,7 +390,7 @@ mod tests {
     /// geçmez. Eşik geçişi artık reload değil, yalnızca kaydırma onarımının
     /// denenip denenmeyeceğini belirliyor.
     #[test]
-    fn eslik_gecisi_yalnizca_mobil_tarafinda() {
+    fn breakpoint_crossing_only_on_mobile_side() {
         const MOBILE: f64 = 390.0;
         const TABLET: f64 = 834.0;
         const DESKTOP: f64 = 1116.0;
@@ -399,37 +416,79 @@ mod tests {
         assert!(!is_mobile_width(768.0));
     }
 
-    /// Görünüm değişimi ARTIK sayfayı yeniden yüklememeli. Bu test, reload'un
-    /// bir daha sessizce geri sızmamasını garanti altına alıyor.
+    /// Eşik GEÇİLMEDİYSE sayfa yeniden yüklenmemeli.
+    ///
+    /// Tablet <-> Masaüstü geçişi, splitter sürüklemesi ve pencere boyutlandırma
+    /// hep bu yoldan geçiyor. Oradan bir yeniden yükleme çıksaydı önizleme
+    /// kullanılamaz hâle gelirdi — sürüklemenin her karesi splash ekranı olurdu.
     #[test]
-    fn gorunum_gecisi_reload_tetiklemez() {
+    fn no_reload_when_threshold_not_crossed() {
+        let same = RESIZE_JS.replace("\"__OA_REPAIR__\"", "false");
+        assert!(same.contains("if (!CROSSED) return;"));
+
+        // Reload o erken çıkışın ARDINDA kalmalı; önüne geçerse koşul anlamsızlaşır.
+        let before = same
+            .split("window.location.reload")
+            .next()
+            .expect("reload çağrısı bulunamadı");
+        assert!(
+            before.contains("if (!CROSSED) return;"),
+            "yeniden yükleme eşik kontrolünün arkasında olmalı"
+        );
+    }
+
+    /// Eşik geçildiyse sitenin kendi önyükleme zinciri yeniden çalışmalı.
+    ///
+    /// Site masaüstü yerleşimini açılışta kurduğu kaydırma altyapısına
+    /// dayandırıyor (`html[data-overlayscrollbars~=body] > body { height:100% }`
+    /// -> `#page` -> `.sidebar`). Eşik geçişinde o zincirin tepesi yeniden
+    /// kurulmuyor ve yan menü belge boyu uzayıp görünmez oluyor. Zinciri
+    /// dışarıdan tetiklemenin tek yolu yeniden yükleme.
+    #[test]
+    fn page_reloads_when_threshold_crossed() {
+        let crossed = RESIZE_JS.replace("\"__OA_REPAIR__\"", "true");
+        assert_eq!(crossed.matches("window.location.reload").count(), 1);
+        // Sitenin kendi mekanizması da tetiklenmeli — yeniden yükleme
+        // beklenirken düzenin bir kare doğru kalması buna bağlı.
+        assert!(crossed.contains("new Event(\"resize\")"));
+    }
+
+    /// Sayfaya ARTIK stil enjekte edilmiyor.
+    ///
+    /// Bu bir gerileme koruması. Betik bir zamanlar
+    /// `html,body{overflow-y:auto!important;height:auto!important}` basıyordu;
+    /// `height:auto`, sitenin yüzdelik yükseklik zincirini onarmak yerine
+    /// kırıyor ve `.sidebar` çöküyordu. Sayfanın yerleşimine dışarıdan
+    /// karışmanın doğru yolu yok — o yüzden hiç karışmıyoruz.
+    #[test]
+    fn no_style_injected_into_page() {
         for crossed in [true, false] {
             let script = RESIZE_JS.replace(
                 "\"__OA_REPAIR__\"",
                 if crossed { "true" } else { "false" },
             );
-            assert!(
-                !script.contains("location.reload"),
-                "görünüm geçişinde tam sayfa yeniden yükleme olmamalı"
-            );
-            // Sitenin kendi mekanizması tetiklenmeli.
-            assert!(script.contains("new Event(\"resize\")"));
+            for forbidden in ["createElement(\"style\")", "textContent", "appendChild"] {
+                assert!(
+                    !script.contains(forbidden),
+                    "önizleme betiği sayfaya stil enjekte etmemeli (`{forbidden}` bulundu)"
+                );
+            }
         }
     }
 
     #[test]
-    fn resize_betigi_yer_tutucuyu_degistirir() {
+    fn resize_script_replaces_placeholder() {
         let crossed = RESIZE_JS.replace("\"__OA_REPAIR__\"", "true");
         let same = RESIZE_JS.replace("\"__OA_REPAIR__\"", "false");
 
         assert!(!crossed.contains("__OA_REPAIR__"), "yer tutucu kalmamalı");
         assert!(!same.contains("__OA_REPAIR__"), "yer tutucu kalmamalı");
-        assert!(crossed.contains("var REPAIR = true;"));
-        assert!(same.contains("var REPAIR = false;"));
+        assert!(crossed.contains("var CROSSED = true;"));
+        assert!(same.contains("var CROSSED = false;"));
     }
 
     #[test]
-    fn init_script_yer_tutuculari_degistirir() {
+    fn init_script_replaces_placeholders() {
         let doc = ThemeDoc {
             accent: [280.0, 80.0, 50.0],
             ..Default::default()
@@ -442,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn init_script_tirnakli_css_ile_bozulmaz() {
+    fn init_script_survives_quoted_css() {
         // Ham CSS içine tırnak ve ters bölü koyup kaçışın doğru olduğunu sınıyoruz.
         let doc = ThemeDoc {
             raw_css: "body::after { content: \"\\\"tehlike\\\"\"; }".into(),

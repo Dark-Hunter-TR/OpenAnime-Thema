@@ -20,7 +20,7 @@ pub enum ThemeMode {
 
 impl Default for ThemeMode {
     fn default() -> Self {
-        ThemeMode::Dark
+        ThemeMode::System
     }
 }
 
