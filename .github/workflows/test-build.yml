@@ -152,6 +152,13 @@ jobs:
         working-directory: src-tauri
         run: cargo test --lib
 
+      # `$lib/*` takma adı `.svelte-kit/tsconfig.json`'dan geliyor ve o dosya
+      # `svelte-kit sync` çalışmadan diskte yok — taze bir checkout'ta hiçbir
+      # komut bunu henüz üretmemiş oluyor. Üretilmeden `bun test` çalışırsa
+      # `$lib/...` içeren her import "Cannot find module" ile patlıyor.
+      - name: SvelteKit senkronizasyonu
+        run: bunx svelte-kit sync
+
       - name: Frontend testleri
         run: bun test src
 
