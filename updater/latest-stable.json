@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "notes": "v1.0.0 sürümü",
+  "pub_date": "2026-08-22T15:25:44Z",
+  "platforms": {
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUSjllYjVteGQxaVAwZWE3SUZnWUx1SmthVXVKTXo1RjMybUZJY1lTaFRKSit2VS9tdStPdTFLWUF5dVNGeEZqcHg3MDNpZk5yQ0I4dnd0MzZWUmdweUVJVUN5ODlOdGdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3NDEyMjQxCWZpbGU6T3BlbkFuaW1lIFRoZW1lXzEuMC4wX2FtZDY0LkFwcEltYWdlClFEcHJxMSs1aXkxcHJveFRvdTYzMWJ4bWc5K21YYW9wUWJiV21Fd2FqcmQyVEQ3aUhqKzUyM3ViSDVGK0ttRStJSWF0MmVzNTZaTkVWNW16TDRIMURRPT0K",
+      "url": "https://github.com/Dark-Hunter-TR/OpenAnime-Thema/releases/download/untagged-f59e4aaf53e9c5d6c5bc/OpenAnime.Theme_1.0.0_amd64.AppImage"
+    },
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUSjllYjVteGQxaUNkQTVvU0xaNjZ5UUtQSUljSGVsL1IxK2swL0RDb2xsR0N0dkk0Z0ZSMXlUU043MVdzMUhHV0luL1VtMnNnUzdDNDhGNlJBRElhRi9sdWJWbndxL2drPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3NDEyMTc5CWZpbGU6T3BlbkFuaW1lIFRoZW1lLmFwcC50YXIuZ3oKS3I0cmozUlpnaDJ4VzljU08xMk1WT24vQUhWWXFpdlliM040S1F3M2VqOXJZZitXck8zU0NROGF4ZXNRR3krTHUxTmVKTFcrSndhSzljbkpJb1hJQUE9PQo=",
+      "url": "https://github.com/Dark-Hunter-TR/OpenAnime-Thema/releases/download/untagged-f59e4aaf53e9c5d6c5bc/OpenAnime.Theme_1.0.0_universal.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUSjllYjVteGQxaUNkQTVvU0xaNjZ5UUtQSUljSGVsL1IxK2swL0RDb2xsR0N0dkk0Z0ZSMXlUU043MVdzMUhHV0luL1VtMnNnUzdDNDhGNlJBRElhRi9sdWJWbndxL2drPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3NDEyMTc5CWZpbGU6T3BlbkFuaW1lIFRoZW1lLmFwcC50YXIuZ3oKS3I0cmozUlpnaDJ4VzljU08xMk1WT24vQUhWWXFpdlliM040S1F3M2VqOXJZZitXck8zU0NROGF4ZXNRR3krTHUxTmVKTFcrSndhSzljbkpJb1hJQUE9PQo=",
+      "url": "https://github.com/Dark-Hunter-TR/OpenAnime-Thema/releases/download/untagged-f59e4aaf53e9c5d6c5bc/OpenAnime.Theme_1.0.0_universal.app.tar.gz"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUSjllYjVteGQxaUlESTBpREw5NmYrc2IvRXFVTkw4WDg3K051SkpNY2hyRUgxTDV0aysvQ2dxaVdPbTFaRHhjTTNQMFVTNUlTVUVST0hmZGI2dGtqYjRDTXAxdVdFTFFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3NDEyMzI4CWZpbGU6T3BlbkFuaW1lIFRoZW1lXzEuMC4wX3g2NC1zZXR1cC5leGUKU2o1YnZTa0dxU2d3ZkErdTNkR002K1dRSEZkbG5MbjVwSy9LMHFnekttR3pxQnFNdHVic3p1d05wcVlkNFdGZGZLSVM2QkxwRllYNkxqVGsvbUNIQ3c9PQo=",
+      "url": "https://github.com/Dark-Hunter-TR/OpenAnime-Thema/releases/download/untagged-f59e4aaf53e9c5d6c5bc/OpenAnime.Theme_1.0.0_x64-setup.exe"
+    }
+  }
+}
