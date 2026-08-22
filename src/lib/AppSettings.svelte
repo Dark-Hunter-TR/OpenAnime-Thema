@@ -465,7 +465,9 @@
 				<div class="item-header">
 					<TextBlock variant="body">Ana ekrana dönerken otomatik kaydet</TextBlock>
 					<TextBlock variant="caption" class="text-secondary">
-						Kapalıyken, kaydedilmemiş değişikliklerle ayrılmak üzereyken onay istenir.
+						Açıkken kaydedilmemiş değişikliklerle Ana Sayfa'ya dönerken hiçbir şey
+						sorulmadan kaydedilir — proje ilk kez kaydediliyorsa yalnızca adı
+						istenir. Kapalıyken her seferinde kaydet/kaydetme onayı istenir.
 					</TextBlock>
 				</div>
 				<div class="expander-control">

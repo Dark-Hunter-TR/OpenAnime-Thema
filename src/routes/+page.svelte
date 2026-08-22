@@ -1405,17 +1405,22 @@
 		}
 
 		if (view === "editor" && dirty) {
-			// Tek sessiz yol: proje zaten diskte VE otomatik kaydetme açık.
-			// Ancak o zaman kullanıcıya sormadan kaydedip çıkabiliriz.
-			if (settings.autoSaveOnLeave && projectId) {
-				persistProject().then(() => (view = next));
+			// Otomatik kaydetme açıksa hiç sormuyoruz — proje diskteyse
+			// sessizce kaydedip geçiyoruz, henüz hiç kaydedilmemişse (ad yok)
+			// tek eksik bilgiyi (adı) soruyoruz ve devam ediyoruz. İkisinde de
+			// "kaydedilsin mi?" sorusu çıkmıyor; kullanıcı bu ayarı zaten o
+			// soruyu istemediği için açtı.
+			if (settings.autoSaveOnLeave) {
+				if (projectId) {
+					persistProject().then(() => (view = next));
+				} else {
+					askName(() => (view = next));
+				}
 				return;
 			}
 
-			// Diğer her durumda soruyoruz. Henüz kaydedilmemiş bir projede
-			// doğrudan ad kutusunu açmak yanıltıcıydı: kullanıcı neden ad
-			// sorulduğunu anlamadan bir diyalogla karşılaşıyordu. Önce ne
-			// yapmak istediğini soruyoruz; "Kaydet" derse ad kutusu geliyor.
+			// Kapalıyken ne yapılacağını soruyoruz; "Kaydet" derse ad kutusu
+			// (gerekiyorsa) oradan açılır.
 			pendingView = next;
 			confirmLeave = true;
 			return;
