@@ -8,7 +8,7 @@ use std::sync::{Mutex, OnceLock};
 
 use tauri::{
     webview::{PageLoadEvent, Webview, WebviewBuilder},
-    AppHandle, LogicalPosition, LogicalSize, Manager, Runtime, WebviewUrl,
+    AppHandle, LogicalPosition, LogicalSize, Manager, Rect, Runtime, WebviewUrl,
 };
 
 use crate::theme::{ThemeDoc, ThemeMode, ThemeState};
@@ -151,6 +151,20 @@ pub fn request_qr_stop(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("QR köprüsü kapatılamadı: {e}"))
 }
                                                 
+/// `add_child` başarısız olduğunda hata mesajına eklenen platform ipucu.
+///
+/// Linux'ta bu çağrının tek gerçek başarısızlık sebebi X11'in olmaması: child
+/// webview, ana pencerenin X penceresi altına açılan ayrı bir X penceresi ve
+/// wry Wayland tutamacıyla çağrıldığında `UnsupportedWindowHandle` dönüyor.
+/// Ham hata metni bunu söylemiyor; kullanıcıya çözümü doğrudan veriyoruz.
+#[cfg(target_os = "linux")]
+const ADD_CHILD_HINT: &str = "\nLinux'ta önizleme X11 gerektiriyor. \
+Oturum Wayland ise uygulamayı `GDK_BACKEND=x11` ile başlatın — normalde bunu \
+uygulama kendisi ayarlıyor, ama değişkeni elle verdiyseniz üzerine yazılmıyor.";
+
+#[cfg(not(target_os = "linux"))]
+const ADD_CHILD_HINT: &str = "";
+
 /// Ana pencereye önizleme webview'ini ekler.
 pub fn create(app: &AppHandle, doc: &ThemeDoc) -> Result<(), Box<dyn std::error::Error>> {
     let window = app
@@ -183,7 +197,9 @@ pub fn create(app: &AppHandle, doc: &ThemeDoc) -> Result<(), Box<dyn std::error:
             eval_apply_mode(&webview, doc.mode);
         });
 
-    let webview = window.add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(w, h))?;
+    let webview = window
+        .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(w, h))
+        .map_err(|e| format!("önizleme webview'i oluşturulamadı: {e}{ADD_CHILD_HINT}"))?;
 
     // Uygulama artık ana ekranla açılıyor, editörle değil. Önizleme baştan
     // gizli olmasa openani.me bir an ana ekranın üstünde görünürdü — native
@@ -244,20 +260,30 @@ pub fn set_bounds(app: &AppHandle, x: f64, y: f64, width: f64, height: f64) -> t
 
     let previous = *last_bounds().lock().unwrap_or_else(|e| e.into_inner());
 
-    // Konum ve boyut iki ayrı çağrı olduğu için aralarında webview bir an
-    // geçersiz bir dikdörtgene sahip oluyor. Sırayı, ara durumun asla
-    // pencerenin dışına taşmayacağı şekilde seçiyoruz:
-    //   sağa kayıyorsa (viewport daralıyor) -> önce küçült, sonra taşı
-    //   sola kayıyorsa (viewport genişliyor) -> önce taşı, sonra büyüt
-    let moving_right = previous.map(|(px, ..)| x > px).unwrap_or(false);
-
-    if moving_right {
-        webview.set_size(LogicalSize::new(width, height))?;
-        webview.set_position(LogicalPosition::new(x, y))?;
-    } else {
-        webview.set_position(LogicalPosition::new(x, y))?;
-        webview.set_size(LogicalSize::new(width, height))?;
-    }
+    // Konum ve boyut TEK çağrıda gidiyor. Bu bir mikro-optimizasyon değil,
+    // Linux'ta doğruluk şartı:
+    //
+    // `set_position` ve `set_size` ayrı ayrı çağrıldığında Tauri ikisini de
+    // oku-değiştir-yaz olarak işliyor — webview'in O ANKİ dikdörtgenini geri
+    // okuyup yalnızca bir alanını değiştiriyor
+    // (tauri-runtime-wry -> `WebviewMessage::SetSize` / `SetPosition`).
+    // WebKitGTK tarafında o geri okuma `XGetWindowAttributes` ile yapılıyor ve
+    // sonucu FİZİKSEL piksel olduğu hâlde `LogicalPosition`/`LogicalSize`
+    // olarak etiketleniyor (wry -> `webkitgtk::InnerWebView::bounds`). Sonuç:
+    //   * DPI ölçeği 1'den farklıysa geri okunan alan her turda ölçekle
+    //     çarpılıyor — webview büyüyerek editörün üstünü kaplıyor,
+    //   * ölçek 1 olsa bile X'in geometri değişiklikleri asenkron olduğu için
+    //     ilk çağrının etkisi ikincinin geri okumasına yetişemiyor ve webview
+    //     eski konumuna geri sıçrıyor.
+    //
+    // `set_bounds` iki alanı da bizim değerlerimizle yazıyor, hiçbir şey geri
+    // okumuyor. Yan faydası: konum ile boyut arasında webview'in bir an
+    // geçersiz bir dikdörtgene sahip olduğu ara durum da ortadan kalkıyor —
+    // eskiden burada bunun için sıralama hilesi vardı.
+    webview.set_bounds(Rect {
+        position: LogicalPosition::new(x, y).into(),
+        size: LogicalSize::new(width, height).into(),
+    })?;
 
     let size_changed = previous.map(|(_, _, pw, ph)| pw != width || ph != height).unwrap_or(true);
 
