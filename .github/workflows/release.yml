@@ -41,8 +41,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
 
 jobs:
   # ────────────────────────────────────────────────────
@@ -226,9 +224,6 @@ jobs:
             patchelf \
             file \
             wget
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Setup Node
         uses: actions/setup-node@v4

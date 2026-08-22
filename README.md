@@ -120,7 +120,7 @@ Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranış�
 
 | Platform | Paket | Not |
 | --- | --- | --- |
-| **Windows** (x64) | `.exe` (NSIS kurulumu) | Geliştirildi ve test edildi |
+| **Windows** (x64) | `.exe` (NSIS kurulumu) | DESTEKLENIYOR |
 | **macOS** (Apple Silicon + Intel) | `.dmg` / `.app` | Tek `universal` paket ikisini de kapsar |
 | **Linux** (x64) | `.AppImage`, `.deb` | AppImage medya çerçevesiyle birlikte paketlenir |
 
