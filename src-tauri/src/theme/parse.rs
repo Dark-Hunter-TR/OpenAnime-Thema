@@ -651,13 +651,19 @@ fn extract_accent_from_vars(all_vars: &BTreeMap<String, String>) -> Option<(Hsl,
         "--color-accent",
         "--btn-bg",
         "--button-bg",
+        // En SONDA: kendi dışa aktarmamızdan gelen taban. Temanın kendi vurgu
+        // değişkeni varsa o kazanır (gerekçe: `EXPORTED_ACCENT_BASE`).
+        EXPORTED_ACCENT_BASE,
     ];
 
     for name in priority_names {
         if let Some(val) = all_vars.get(name) {
             let resolved = resolve_var(val, all_vars);
             if let Some(hsl) = parse_color_to_hsl(&resolved) {
-                return Some((hsl, name == "--fds-accent-base"));
+                // Bu iki ad rampanın TABANINI taşıyor; gerisi temanın boyama
+                // rengi ve `--fds-accent-default`a karşılık geliyor.
+                let is_base = name == "--fds-accent-base" || name == EXPORTED_ACCENT_BASE;
+                return Some((hsl, is_base));
             }
         }
     }
@@ -1230,6 +1236,14 @@ fn strip_marker_block(text: &str) -> String {
     out.replace(TOKENS_CLOSE, "")
 }
 
+/// Kendi dışa aktarmamızdan gelen vurgu tabanının geçici adı.
+///
+/// Yönetilen blok içindeki `--fds-accent-base` bu ada çevriliyor ki vurgu
+/// arama listesinin SONUNA düşsün: temanın kendi vurgu değişkeni varsa o
+/// kazansın, yoksa bizim yazdığımız taban kullanılsın
+/// (gerekçe: `drop_derived_ramp`).
+const EXPORTED_ACCENT_BASE: &str = "--oa-exported-accent-base";
+
 /// Yönetilen blok içindeki ÜRETİLMİŞ seçili-öğe vurgu kuralını atar.
 ///
 /// `emit_css`, kullanıcı vurguyu değiştirdiğinde şu kuralı yazıyor:
@@ -1302,6 +1316,19 @@ fn drop_generated_accent_rule(block: &str) -> String {
 /// basamaklar bu yoldan geçmiyor; onlar korunmaya devam ediyor.
 fn drop_derived_ramp(block: &str) -> String {
     let mut out = block.to_string();
+
+    // Taban SİLİNMİYOR, yeniden adlandırılıyor.
+    //
+    // O değer bizim çıktımız: eski bir sürüm onu temanın boyama renginden
+    // YANLIŞ eşlemeyle hesaplamıştı. Öncelik listesinde `--fds-accent-base`
+    // ilk sırada olduğu için, dosya yeniden açıldığında temanın kendi vurgu
+    // değişkeni hiç okunmuyor ve hata sonsuza kadar taşınıyordu.
+    //
+    // Silmek de olmaz: sıfırdan bu editörde yapılmış bir temada başka vurgu
+    // kaynağı yoktur ve kullanıcının seçtiği renk kaybolurdu. Bu yüzden ad
+    // değiştirilip listenin SONUNA alınıyor — temanın kendi değişkeni varsa o
+    // kazanıyor, yoksa bu kullanılıyor.
+    out = out.replace("--fds-accent-base", EXPORTED_ACCENT_BASE);
 
     for name in crate::theme::color::RAMP_NAMES {
         if name == "accent-base" {
