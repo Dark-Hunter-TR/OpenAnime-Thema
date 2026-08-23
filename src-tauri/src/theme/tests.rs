@@ -146,35 +146,54 @@ mod tests {
         assert!(css.contains("var(--accent-primary)"), "temanın kuralı kaybolmuş:\n{css}");
     }
 
+    /// Temanın vurgu rengi, SİTENİN boyadığı basamakta çıkmalı.
+    ///
+    /// Kullanıcının bildirdiği hata: içe aktarılan temada seçili menü
+    /// göstergesi ve ikon, temanın kendi renginden görünür biçimde AÇIK
+    /// çıkıyordu — "renk tutmuyordu".
+    ///
+    /// Sebep eşlemeydi. Sitenin vurguyla boyadığı her şey
+    /// `--fds-accent-default` kullanıyor; ölçüldü:
+    ///
+    /// ```text
+    /// .list-item::before { background-color: var(--fds-accent-default);
+    ///                      inline-size: 3px; block-size: 16px }
+    /// ```
+    ///
+    /// Kütüphane o token'ı koyu kipte `light-2`den türetiyor. Temanın rengi
+    /// doğrudan TABAN yapıldığında site onu bir basamak açık çiziyordu. Taban
+    /// geriye çözülünce ikisi çakışıyor.
     #[test]
-    fn tmp_trace_sidebar() {
-        let Ok(css) = std::fs::read_to_string("D:/tema2.css") else { return };
-        let raw = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/control-surface.json"
-        ))
-        .expect("control-surface.json yok");
-        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        let known: Vec<String> = v["rules"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
+    fn theme_accent_lands_on_the_painted_step() {
+        let theme = "\
+:root { --accent-primary: #8db4f7; }
+.list-item.selected { border-left: 2px solid var(--accent-primary); }
+";
+        let doc = parse_foreign_css(theme, &[], &ThemeDoc::default());
 
-        let doc = parse_foreign_css(&css, &known, &ThemeDoc::default());
-        println!("rule_overrides ({}):", doc.rule_overrides.len());
-        for (k, body) in &doc.rule_overrides {
-            if k.contains("list-item") || k.contains("sidebar") || k.contains("selected") {
-                println!("  [{k}]\n     {}", body.replace('\n', " "));
-            }
+        let painted = derive_ramp(doc.accent)[accent_default_step(false)];
+        let target = parse_color_to_hsl("#8db4f7").expect("renk okunmalı");
+
+        for (i, (a, b)) in painted.iter().zip(target.iter()).enumerate() {
+            assert!(
+                (a - b).abs() < 0.5,
+                "boyanan basamak temanın rengiyle çakışmıyor ({i}): {painted:?} != {target:?}"
+            );
         }
-        println!("\nseed_tokens icinde selected:");
-        for (k, val) in &doc.seed_tokens {
-            if k.contains("selected") || k.contains("accent-primary") {
-                println!("  {k} = {val}");
-            }
-        }
+
+        // Taban ise bilerek FARKLI: rampanın altında duruyor.
+        assert!(doc.accent[2] < target[2], "taban boyanan renkten koyu olmalı");
+    }
+
+    /// `--fds-accent-base` doğrudan yazılmışsa geriye çözme YAPILMAZ.
+    ///
+    /// O ad zaten rampanın tabanını söylüyor; bir de geriye çözmek rengi
+    /// kaydırırdı.
+    #[test]
+    fn explicit_fds_base_is_used_as_is() {
+        let theme = ":root { --fds-accent-base: 206, 100%, 42%; }";
+        let doc = parse_foreign_css(theme, &[], &ThemeDoc::default());
+        assert_eq!(doc.accent, [206.0, 100.0, 42.0]);
     }
 
     /// AÇIK bir vurguda üst basamaklar beyaza çökmemeli.
