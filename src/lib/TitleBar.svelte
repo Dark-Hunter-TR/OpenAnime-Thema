@@ -11,7 +11,8 @@
 	import { onDestroy, onMount } from "svelte";
 	import { fly } from "svelte/transition";
 	import { cubicOut } from "svelte/easing";
-	import { IconButton, TextBlock, Tooltip } from "fluent-svelte-extra";
+	import { IconButton, TextBlock } from "fluent-svelte-extra";
+	import Tooltip from "$lib/Tooltip.svelte";
 	import { getCurrentWindow } from "@tauri-apps/api/window";
 
 	import Icon from "$lib/Icon.svelte";

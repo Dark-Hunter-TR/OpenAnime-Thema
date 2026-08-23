@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Flyout, IconButton, Slider, TextBlock, TextBox, Tooltip } from "fluent-svelte-extra";
+	import { Flyout, IconButton, Slider, TextBlock, TextBox } from "fluent-svelte-extra";
+	import Tooltip from "$lib/Tooltip.svelte";
 	import ColorPicker from "$lib/ColorPicker.svelte";
 	import type { ColorTokenSpec } from "$lib/customization";
 	import { toCssColor } from "$lib/customization";

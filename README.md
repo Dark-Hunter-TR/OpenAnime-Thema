@@ -32,9 +32,11 @@
 
 ## <img src="https://api.iconify.design/fluent/info-24-filled.svg?color=%2362cdfe&width=26&height=26" width="26" />&nbsp; Proje Hakkında
 
-Bu depo, **[openani.me](https://openani.me)** için resmî olmayan bir masaüstü tema editörüdür. Sitenin kendi tema enjeksiyon noktasını (`localStorage.theme_content`) kullanarak, sitenin gerçek CSS'ini ve `fluent-svelte-extra` tasarım dilini birebir okuyup düzenlemenize izin verir.
+Bu depo, **[openani.me](https://openani.me)** için resmî olmayan bir masaüstü tema editörüdür. Sitenin gerçek CSS'ini ve `fluent-svelte-extra` tasarım dilini birebir okuyup düzenlemenize izin verir.
 
-Uygulama tahmine değil, **doğrulanmış bulgulara** dayanır: her `--fds-*` token, her seçici ve her API yanıtı, sitenin canlı CSS/JS paketleri incelenerek teyit edilmiştir (bkz. [`PLAN.md`](./PLAN.md), [`TEMA-BULGULARI.md`](./TEMA-BULGULARI.md)). Üretilen `.css` dosyası, ekstra bir adım gerektirmeden sitenin kendi resmî tema sistemiyle **%100 uyumludur**.
+Önizleme, sitenin kendi tema yuvasına (`localStorage.theme_content`) **hiçbir şey yazmaz**. Editörün ürettiği CSS yalnızca uygulamanın kendi `<style>` etiketine basılır ve her değişiklikte gerçek zamanlı olarak yenilenir. İçe aktarılan bir tema da sayfaya ham metin olarak eklenmez; kural kural çözümlenip editörün modeline girer, önizlemeye giden CSS'in tamamı o modelden üretilir. Bu sayede içe aktarılan bir dosya sonradan düzenlenebilir kalır.
+
+Uygulama tahmine değil, **doğrulanmış bulgulara** dayanır: her `--fds-*` token, her seçici ve her API yanıtı, sitenin canlı CSS/JS paketleri incelenerek teyit edilmiştir (bkz. [`PLAN.md`](./PLAN.md), [`TEMA-BULGULARI.md`](./TEMA-BULGULARI.md)). Üretilen `.css` dosyası saf CSS'tir; sitenin kendi tema sistemine ekstra bir adım gerektirmeden verilebilir.
 
 > [!NOTE]
 > Bu proje topluluk tarafından geliştirilmektedir, OpenAnime'ın resmî bir ürünü değildir.
@@ -45,7 +47,7 @@ Uygulama tahmine değil, **doğrulanmış bulgulara** dayanır: her `--fds-*` to
 
 ### <img src="https://api.iconify.design/fluent/paint-brush-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Canlı Önizlemeli Görsel Editör
 
-- Editör ekranı iki panelden oluşur: solda kategorilere ayrılmış görsel kontroller (Renkler, Şekil, Efekt, Medya, Bileşen, Gelişmiş), sağda **openani.me'nin gerçek kendisinin** çalıştığı, native bir webview.
+- Editör ekranı iki panelden oluşur: solda üç sekmeli kontrol paneli (**Temel** — en çok kullanılan beş ayar, **Tümü** — gruplandırılmış bütün bölümler, **Kod** — CSS metni), sağda **openani.me'nin gerçek kendisinin** çalıştığı, native bir webview.
 - Her kontrol değişikliği anında sağdaki önizlemeye yansır — ayrı bir "uygula" adımı yoktur.
 - Önizleme, sitenin masaüstü/tablet/mobil kırılma noktalarını **gerçekten** tetikleyecek şekilde daraltılabilir; sahte bir CSS ölçeklemesi değildir.
 
@@ -85,7 +87,7 @@ Uygulama tahmine değil, **doğrulanmış bulgulara** dayanır: her `--fds-*` to
 <img src=".github/assets/screenshot-settings.png" alt="Ayarlar sayfası" width="860" />
 </div>
 
-Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranışına dair tercihler: açılış düzenleme modu (görsel/kod), varsayılan önizleme genişliği ve sayfası, ana ekrana dönerken otomatik kaydetme.
+Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranışına dair tercihler: açılışta hangi sekmenin geleceği (Temel/Kod), varsayılan önizleme genişliği ve sayfası, ana ekrana dönerken otomatik kaydetme.
 
 ### <img src="https://api.iconify.design/fluent/arrow-sync-24-filled.svg?color=%2362cdfe&width=22&height=22" width="22" />&nbsp; Uygulama İçi Güncelleyici
 
@@ -129,6 +131,18 @@ Düzenlediğiniz temayı **etkilemeyen**, yalnızca editörün kendi davranış�
 > **Linux notu:** `.deb` için WebKitGTK 4.1 gerekir (`libwebkit2gtk-4.1-0`). AppImage'ı çalıştırmadan önce `chmod +x` vermeyi unutmayın.
 >
 > Canlı önizleme, ana pencerenin içine eklenen ayrı bir webview üzerinde çalışıyor ve bu, Linux'ta **X11 gerektiriyor** — Wayland oturumlarında uygulama kendini otomatik olarak XWayland'e (`GDK_BACKEND=x11`) alır. Ayrıca WebKitGTK'nın DMA-BUF renderer'ı bazı sürücülerde (özellikle NVIDIA'nın tescilli sürücüsü) webview'i boş bırakıyor; bu yüzden `WEBKIT_DISABLE_DMABUF_RENDERER=1` varsayılan olarak ayarlanıyor. İki değişkeni de kendiniz verirseniz uygulama üzerine yazmaz — sorun giderirken `WEBKIT_DISABLE_COMPOSITING_MODE=1` de denenebilir.
+>
+> **AppImage hiç açılmıyorsa:** `sudo` ile denemeyin. Root, sizin X yetki çerezinizi (`XAUTHORITY`) göremediği için X sunucusu bağlantıyı reddeder; uygulama `Failed to initialize GTK` diyerek düşer ve bu panik asıl sebebi tamamen gizler. Terminalden, root olmadan çalıştırıp çıktıyı okuyun:
+>
+> ```bash
+> chmod +x OpenAnime.Theme_*.AppImage
+> echo "oturum=$XDG_SESSION_TYPE DISPLAY=$DISPLAY WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
+> ./OpenAnime.Theme_*.AppImage
+> ```
+>
+> - `DISPLAY` boşsa oturum XWayland'siz saf Wayland'dir: `xwayland` paketini kurun (`apt install xwayland` / `dnf install xorg-x11-server-Xwayland` / `pacman -S xorg-xwayland`) ya da giriş ekranından **X11 (Xorg)** oturumu seçin.
+> - `dlopen(): error loading libfuse.so.2` görürseniz FUSE 2 eksiktir: `sudo apt install libfuse2t64`, ya da tek seferlik `./OpenAnime.Theme_*.AppImage --appimage-extract-and-run`.
+> - `GLIBC_2.xx not found` görürseniz dağıtımınız derleme ortamından eski demektir; bu durumda `.deb` paketini ya da kaynaktan derlemeyi kullanın.
 
 ---
 

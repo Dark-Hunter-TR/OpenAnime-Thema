@@ -289,14 +289,58 @@ export function toCssColor(hex: string, alphaPercent: number): string | null {
 
 /** CSS değerini kontrol durumuna geri çözer (kod editöründen gelen metin için). */
 export function fromCssColor(value: string): { hex: string; alpha: number } | null {
-	const text = value.trim();
+	// `!important` ve satır sonu noktalı virgülü değerin parçası değil. Bir
+	// dosyadan gelen bildirimlerde ikisi de sık: temizlenmezse hiçbir desen
+	// tutmaz ve renk "okunamadı" sayılırdı.
+	const text = value
+		.trim()
+		.replace(/;\s*$/, "")
+		.replace(/\s*!important\s*$/i, "")
+		.trim();
 
-	const rgba = text.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/);
+	// Ayırıcıyı tek biçime indir.
+	//
+	// CSS Color 4 ile `hsl(0deg 0% 100%)` ve `rgb(0 0 0 / 50%)` yazımı geçerli
+	// ve gerçek temalar bunu kullanıyor (örnek temanın metin renklerinin
+	// tamamı bu biçimde). Yalnızca virgüllü yazımı tanıyan eski desenler bu
+	// değerlerde `null` dönüyordu; sonucu, temayı içe aktardıktan sonra ilgili
+	// kontrolün temanın rengini değil site varsayılanını göstermesiydi.
+	const normalized = text.replace(
+		/^(rgba?|hsla?)\(([^)]*)\)$/i,
+		(_, fn: string, body: string) =>
+			// Sıra önemli: önce virgül çevresindeki boşluk yutuluyor, yoksa
+			// `255, 0, 0` son adımda `255,,0,,0` olurdu.
+			`${fn}(${body
+				.trim()
+				.replace(/\s*,\s*/g, ",")
+				.replace(/\s*\/\s*/, ",")
+				.replace(/\s+/g, ",")})`
+	);
+
+	const rgba = normalized.match(
+		/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)(%?)\s*)?\)$/
+	);
 	if (rgba) {
 		const [r, g, b] = [Number(rgba[1]), Number(rgba[2]), Number(rgba[3])];
-		const alpha = rgba[4] === undefined ? 100 : Math.round(Number(rgba[4]) * 100);
+		const alpha =
+			rgba[4] === undefined
+				? 100
+				: Math.round(rgba[5] === "%" ? Number(rgba[4]) : Number(rgba[4]) * 100);
 		const hex = [r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("");
 		return { hex: `#${hex}`, alpha };
+	}
+
+	// 4 ve 8 basamaklı hex de alfa taşıyor (`#rgba`, `#rrggbbaa`).
+	const hexAlpha = text.match(/^#([0-9a-fA-F]{4}|[0-9a-fA-F]{8})$/);
+	if (hexAlpha) {
+		const digits = hexAlpha[1];
+		const short = digits.length === 4;
+		const part = (i: number) =>
+			short ? digits[i].repeat(2) : digits.slice(i * 2, i * 2 + 2);
+		return {
+			hex: `#${part(0)}${part(1)}${part(2)}`,
+			alpha: Math.round((parseInt(part(3), 16) / 255) * 100)
+		};
 	}
 
 	if (/^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(text)) {
@@ -306,7 +350,7 @@ export function fromCssColor(value: string): { hex: string; alpha: number } | nu
 		return { hex: `#${hex}`, alpha: 100 };
 	}
 
-	const hsl = text.match(
+	const hsl = normalized.match(
 		/^hsla?\(\s*([\d.]+)(?:deg)?\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*(?:,\s*([\d.]+)(%?)\s*)?\)$/
 	);
 	if (hsl) {
@@ -350,6 +394,37 @@ export function hslToRgb(h: number, s: number, l: number): [number, number, numb
 	];
 }
 
+/**
+ * Kütüphanenin VARSAYILAN vurgu rampası — yedi basamak, `"H, S%, L%"`.
+ *
+ * Rampayı normalde Rust üretip `applyTheme` ile gönderiyor. Ama kontroller
+ * uygulama açılırken, ilk `applyTheme` daha DÖNMEDEN bir kez tohumlanıyor ve o
+ * anda rampa boş oluyor. Boş rampanın iki ayrı sonucu vardı:
+ *
+ *   * `resolveTokenDefault` `var(--fds-accent-*)`ı çözemiyor, `null` dönüyor ve
+ *     `seedColor` BEYAZA düşüyordu — yani vurgudan türeyen her renk beyaz
+ *     tohumlanıyordu.
+ *   * `rampHex` her çağrı yerinde elle yazılmış bir yedek hex kullanıyordu ve o
+ *     yedekler gerçek rampayla uyuşmuyordu (`light-1` için `#00a2ff` yazılmıştı,
+ *     doğrusu `#0092fa` — gözle ayırt edilen iki farklı mavi).
+ *
+ * İkisi de aynı belirtiyi üretiyordu: bir bölüm KAPALIYKEN site kendi rengini
+ * çiziyor, AÇILINCA kontrolün yanlış tohumu yazılıyor ve renk zıplıyordu.
+ *
+ * Değerler Rust'taki türetmenin çıktısıyla aynı; orada
+ * `default_base_produces_library_ramp` testiyle sabitleniyor. Buradaki kopya da
+ * `customization.test.ts` ile sabitleniyor ki ikisi sessizce ayrışmasın.
+ */
+export const DEFAULT_ACCENT_RAMP: string[] = [
+	"191, 98%, 80%",
+	"199, 99%, 69%",
+	"205, 100%, 49%",
+	"206, 100%, 42%",
+	"209, 100%, 36%",
+	"215, 100%, 29%",
+	"226, 100%, 20%"
+];
+
 /** Accent rampasındaki basamak adları — katalog varsayılanlarını çözerken gerekli. */
 const RAMP_ORDER = [
 	"accent-light-3",
@@ -376,7 +451,12 @@ export function resolveTokenDefault(
 
 	const resolved = raw.replace(/var\(\s*--fds-(accent-[a-z0-9-]+)\s*\)/g, (whole, name: string) => {
 		const index = RAMP_ORDER.indexOf(name);
-		return index >= 0 && ramp[index] ? ramp[index] : whole;
+		if (index < 0) return whole;
+		// Rampa boşken (açılışta ilk `applyTheme` daha dönmedi) kütüphanenin
+		// varsayılan rampasına düşülüyor. Eskiden burada değişken çözülmeden
+		// kalıyor, fonksiyon `null` dönüyor ve çağıran BEYAZA düşüyordu
+		// (gerekçe: `DEFAULT_ACCENT_RAMP`).
+		return ramp[index] ?? DEFAULT_ACCENT_RAMP[index] ?? whole;
 	});
 
 	// `var(...)` kaldıysa çözemedik demektir.

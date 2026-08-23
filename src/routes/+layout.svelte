@@ -293,6 +293,44 @@
 		align-items: center !important;
 	}
 
+	/* ComboBox açılır listesi: kendi kutusunun genişliğinde kalsın.
+	   ("Yazı tipi" seçicisi liste açıldığında panelden taşıp pencere boyunca
+	   uzanıyordu.)
+
+	   ## Bu bir teşhis değil, geometrinin sabitlenmesi
+
+	   Kütüphanenin kendi kaynağı zaten doğru: `<ul class="combo-box-dropdown">`
+	   `.combo-box` div'inin İÇİNDE duruyor, o div `position: relative` ve liste
+	   `position: absolute; inline-size: calc(100% + 8px); inset-inline-start: 0`.
+	   Yani listenin kutusuna göre konumlanması gerekiyor. Taşmanın sebebini
+	   kaynaktan çıkaramadım: uygulamada `.combo-box`'a dokunan bir kural yok,
+	   ikinci bir fluent paketi de yüklü değil.
+
+	   Bu yüzden buradaki kurallar bir nedeni ortadan kaldırmıyor, kütüphanenin
+	   KENDİ amaçladığı değerleri geri yazıyor — hangi mekanizma araya girerse
+	   girsin sonuç doğru kalıyor. Yeni bir değer uydurulmuyor, o yüzden bir
+	   şeyi bozma riski yok.
+
+	   `!important` gerekçesi yukarıdaki `.info-bar` notuyla aynı: kütüphane
+	   çift kapsam sınıfıyla derliyor, uygulama düzeyindeki yaprak seçici
+	   özgüllükle geçemiyor. */
+	:global(.combo-box) {
+		position: relative !important;
+	}
+
+	:global(.combo-box-dropdown) {
+		inline-size: calc(100% + 8px) !important;
+		inset-inline-start: 0 !important;
+	}
+
+	/* `auto-width` varyantı bilerek içeriği kadar geniş; onu daraltmıyoruz,
+	   yalnızca pencereden taşmasını engelliyoruz. */
+	:global(.combo-box-dropdown.auto-width) {
+		inline-size: max-content !important;
+		min-inline-size: calc(100% + 8px) !important;
+		max-inline-size: 100vw !important;
+	}
+
 	/* İkon artık kutunun ortasında ve metinle aynı renkte. */
 	:global(.info-bar-icon) {
 		margin-block-start: 0 !important;

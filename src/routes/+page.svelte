@@ -10,9 +10,10 @@
 		TextArea,
 		TextBlock,
 		TextBox,
-		ToggleSwitch,
-		Tooltip
+		ToggleSwitch
 	} from "fluent-svelte-extra";
+	import Tooltip from "$lib/Tooltip.svelte";
+	import { unclip } from "$lib/unclip";
 
 	import { getVersion } from "@tauri-apps/api/app";
 	import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -67,9 +68,11 @@
 		buildAdvImports,
 		buildAdvRules,
 		buildAdvTokens,
+		controlledRuleProps,
 		ADV_TOKEN_KEYS,
 		type AdvState
 	} from "$lib/advancedBuild";
+	import { extractUrl, mergeRuleOverrides, resolveLength } from "$lib/cssDecls";
 	import { SITE_DEFAULTS, seedColor, seedColors } from "$lib/defaults";
 	import { STARTER_MARKER, starterTemplate } from "$lib/starter";
 	import {
@@ -90,14 +93,23 @@
 	import { PARAM_ROUTES, ROUTES, SITE_ORIGIN, VIEWPORTS } from "$lib/routes";
 	import {
 		BADGE_SELECTOR,
+		BADGE_TEXT_SELECTOR,
 		BG_BODY_SELECTOR,
 		BG_TRANSPARENT_SELECTOR,
 		CARD_SELECTOR,
 		ENHANCED_SELECTOR,
+		ENHANCED_TEXT_SELECTOR,
+		AVATAR_SELECTOR,
+		BANNER_PROGRESS_SELECTOR,
+		BANNER_SELECTED_SELECTOR,
+		COMMENT_INPUT_SELECTOR,
+		COMMENT_SELECTOR,
 		FONT_PRESETS,
 		KNOWN_SELECTORS,
+		TEXT_TOKENS,
 		LOGO_IMAGE_HIDE_SELECTOR,
 		LOGO_IMAGE_SELECTOR,
+		LOGO_BADGE_SELECTOR,
 		LOGO_ROW_SELECTOR,
 		LOGO_TEXT_SELECTOR,
 		MASCOT_SLOTS,
@@ -105,6 +117,7 @@
 		PLAYER_EPISODE_SELECTOR,
 		PLAYER_SLIDER_SELECTOR,
 		RELEASED_BADGE_SELECTOR,
+		RELEASED_TEXT_SELECTOR,
 		SCROLLBAR_SELECTOR,
 		SIDEBAR_SELECTOR
 	} from "$lib/advanced";
@@ -115,7 +128,10 @@
 		EASINGS,
 		EASING_TOKEN,
 		HOVER_TOKENS,
+		LINK_TOKENS,
 		SIDEBAR_SELECTED_TOKEN,
+		SURFACE_TOKENS,
+		SYSTEM_TOKENS,
 		fromCssColor,
 		hexToRgb,
 		hslToRgb,
@@ -142,6 +158,22 @@
 		.concat(DURATION_TOKENS.map((t) => t.token), EASING_TOKEN);
 	const RULE_KEY_UNIVERSE = [...KNOWN_SELECTORS, BUTTON_TEXT_SELECTOR];
 
+	// Kontrollerin bir kuralda SAHİP OLDUĞU özellikler.
+	//
+	// `TOKEN_KEY_UNIVERSE` zaten özellik düzeyinde çalışıyor (bir token = bir
+	// bildirim), ama kurallar öyle değil: tek bir selector'ın gövdesinde hem
+	// kontrollerin ürettiği hem de kullanıcının dosyasından gelen bildirimler
+	// yan yana durabiliyor. Aşağıdaki harita, yeniden birleştirmede hangi
+	// bildirimlere dokunulacağını söylüyor; gerisi olduğu gibi korunuyor
+	// (bkz. `cssDecls.ts` -> `mergeRuleOverrides`).
+	//
+	// `BUTTON_TEXT_SELECTOR` gelişmiş bölümlerin değil `buildRules`'ın çıktısı,
+	// bu yüzden elle katılıyor.
+	const CONTROLLED_RULE_PROPS: Record<string, Set<string>> = {
+		...controlledRuleProps(),
+		[BUTTON_TEXT_SELECTOR]: new Set(["color"])
+	};
+
 	// --- Tek state -----------------------------------------------------------
 	// Görsel kontroller ve kod editörü aynı `doc` üzerinde çalışır:
 	//   görsel değişiklik -> apply_theme    -> css -> editöre yazılır
@@ -155,36 +187,51 @@
 	let copied = false;
 	let lastPushed = "";
 
+	/**
+	 * Editör panelinin sekmesi.
+	 *
+	 * Önceden İKİ ayrı anahtar vardı: Görsel/Kod ve onun altında altı kategori
+	 * (Renkler · Şekil · Efekt · Medya · Bileşen · Gelişmiş). O bölme üç ayrı
+	 * sorun üretiyordu: "Bileşen" sekmesi hiçbir bölüm içermiyordu (boş açılıyordu),
+	 * "Şekil" ve "Efekt" tek bir bölüm için birer sekme harcıyordu, "Gelişmiş" ise
+	 * geri kalan on üç bölümün toplandığı bir çekmeceye dönüşmüştü. Üstelik altı
+	 * sekme panele sığmadığı için şeridin iki yanına kaydırma okları koymak
+	 * gerekmişti.
+	 *
+	 * Yerine tek bir anahtar geldi ve sekmeler kullanıcının niyetine göre
+	 * ayrıldı, CSS kavramlarına göre değil:
+	 *
+	 *   Temel — en çok istenen beş ayar. Teknik bilgisi olmayan biri buraya
+	 *           girip işini bitirebilmeli.
+	 *   Tümü  — bütün bölümler, gruplandırılmış tek akış.
+	 *   Kod   — CSS metni.
+	 */
+	let editorTab: "basic" | "all" | "code" = "basic";
+
+	/**
+	 * `editMode` artık türetilmiş: davranışı (kod modunda kullanıcının metnini
+	 * ezmemek, Discord durumunu yazmak) hâlâ bu ikili ayrım belirliyor, ama
+	 * arayüzün tek doğru kaynağı `editorTab`.
+	 */
 	let editMode: "visual" | "code" = "visual";
-	let editorCategory: "colors" | "shape" | "motion" | "media" | "components" | "advanced" = "colors";
+	$: editMode = editorTab === "code" ? "code" : "visual";
 
-	// Kategori şeridi (Renkler/Şekil/…/Gelişmiş) panel dar olunca sığmıyor;
-	// oklar şeridi DOĞRUDAN kaydırıyor — seçili sekmeyi görünüre kaydırmıyor.
-	let categoryStripEl: HTMLDivElement | undefined;
-	let categoryScrollLeft = false;
-	let categoryScrollRight = false;
+	/** Kaydedilmiş bir kip değerinden sekmeye. */
+	const tabFromMode = (mode: "visual" | "code") => (mode === "code" ? "code" : "basic");
 
-	function updateCategoryScrollState() {
-		const el = categoryStripEl;
-		if (!el) return;
-		categoryScrollLeft = el.scrollLeft > 1;
-		categoryScrollRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-	}
+	/**
+	 * "Temel" sekmesinde görünen bölümler.
+	 *
+	 * Beşi de "temayı açan biri ilk olarak neyi değiştirmek ister" sorusunun
+	 * karşılığı: rengi, arka planı, logoyu, köşeleri, yazı tipini. Liste burada
+	 * duruyor çünkü hem bu dosyanın kendi bölümlerini (vurgu, köşe) hem de
+	 * `AdvancedSections`'ınkileri (arka plan, logo, yazı tipi) kapsıyor.
+	 */
+	const BASIC_SECTIONS = ["accent", "bg", "logo", "radius", "typo"];
 
-	function scrollCategoryStrip(direction: 1 | -1) {
-		categoryStripEl?.scrollBy({ left: direction * 160, behavior: "smooth" });
-	}
+	$: showSection = (section: string) =>
+		editorTab === "all" || BASIC_SECTIONS.includes(section);
 
-	let categoryStripObserver: ResizeObserver | null = null;
-	$: if (categoryStripEl && !categoryStripObserver) {
-		categoryStripObserver = new ResizeObserver(updateCategoryScrollState);
-		categoryStripObserver.observe(categoryStripEl);
-		categoryStripEl.addEventListener("scroll", updateCategoryScrollState, { passive: true });
-		updateCategoryScrollState();
-	} else if (!categoryStripEl && categoryStripObserver) {
-		categoryStripObserver.disconnect();
-		categoryStripObserver = null;
-	}
 
 	// --- Üst düzey görünüm ---------------------------------------------------
 	// Uygulama artık doğrudan editöre düşmüyor: açılışta ana ekran gelir.
@@ -323,6 +370,34 @@
 	// çıktıları aşağıda mevcut haritalara katılıyor.
 	let adv: AdvState = defaultAdv(seedMode, ramp);
 
+	/**
+	 * Sıfırlamanın TABANI: düzenlenen şeyin "orijinali".
+	 *
+	 * Kural iki durumlu:
+	 *   * Yeni tema oluşturuluyorsa taban SİTENİN kendi değerleri.
+	 *   * Bir `.css` dosyası ya da GitHub içeriği açıldıysa taban O TEMANIN
+	 *     içe aktarma anındaki değerleri.
+	 *
+	 * `null` iken taban site varsayılanı; içe aktarma sonrası bir anlık görüntü
+	 * konuyor. Eskiden böyle bir kavram yoktu: kapalı bölümler ve sıfırlama
+	 * düğmesi HER ZAMAN site varsayılanına dönüyordu, yani içe aktarılmış bir
+	 * temada bir bölümü kapatıp açmak temanın değerlerini siliyordu. Kullanıcı
+	 * yalnızca aç-kapa yapıyor, logosunun yazı tipi ve rengi gidiyordu.
+	 */
+	let advBaseline: AdvState | null = null;
+
+	$: advBaselineOrSite = advBaseline ?? defaultAdv(seedMode, ramp);
+
+	/** İçe aktarma sonrası tabanı, o anki kontrol durumundan sabitler. */
+	function captureBaseline() {
+		advBaseline = structuredClone(adv);
+	}
+
+	/** Yeni temaya dönüldüğünde taban yeniden sitenin kendi değerleri olur. */
+	function clearBaseline() {
+		advBaseline = null;
+	}
+
 	$: doc.controlCornerRadius = radiusEnabled ? controlRadius : null;
 	$: doc.overlayCornerRadius = radiusEnabled ? overlayRadius : null;
 
@@ -430,11 +505,21 @@
 				for (const key of TOKEN_KEY_UNIVERSE) delete cleaned[key];
 				doc.tokenOverrides = { ...cleaned, ...tokenMap };
 			}
+			// Kurallarda anahtarı komple silip yenisini yazmak DEĞİL, bildirim
+			// bildirim birleştirme yapılıyor. Sebebi: bir selector'ın gövdesi
+			// yalnızca kontrollerin ürettiklerinden ibaret olmayabilir. Harici
+			// bir tema `.slider.orientation-horizontal`a `color`, `position`,
+			// `block-size` gibi kontrollerde karşılığı olmayan bildirimler
+			// yazıyor; gövdeyi komple değiştiren eski yol, kullanıcı hiçbir
+			// şeye dokunmasa bile ilk yeniden üretimde onları siliyordu.
 			if (nextRules !== lastRuleMap) {
 				lastRuleMap = nextRules;
-				const cleaned = { ...doc.ruleOverrides };
-				for (const key of RULE_KEY_UNIVERSE) delete cleaned[key];
-				doc.ruleOverrides = { ...cleaned, ...ruleMap };
+				doc.ruleOverrides = mergeRuleOverrides(
+					doc.ruleOverrides,
+					ruleMap,
+					RULE_KEY_UNIVERSE,
+					CONTROLLED_RULE_PROPS
+				);
 			}
 		}
 	}
@@ -470,6 +555,11 @@
 	/** Kod tarafından çözümlenen dokümanı kontrollere geri yansıtır. */
 	function adoptDoc(next: ThemeDoc) {
 		adopting = true;
+
+		// Kontroller, CSS'e YAZILAN token'ların yanında yalnızca gösterim için
+		// taşınanları da okuyor (bkz. `theme.ts` -> `seedTokens`). Yazılanlar
+		// üstte: bir değer ikisinde birden varsa geçerli olan odur.
+		const seededTokens = { ...(next.seedTokens ?? {}), ...next.tokenOverrides };
 		if (next.accent) {
 			accentH = next.accent[0];
 			accentS = next.accent[1];
@@ -480,18 +570,18 @@
 		if (next.overlayCornerRadius !== null) overlayRadius = next.overlayCornerRadius;
 
 		// Hover / buton renkleri: CSS değerini kontrole geri çöz.
-		hoverEnabled = HOVER_TOKENS.some((s) => next.tokenOverrides[s.token] !== undefined);
+		hoverEnabled = HOVER_TOKENS.some((s) => seededTokens[s.token] !== undefined);
 		HOVER_TOKENS.forEach((spec, i) => {
-			const parsed = fromCssColor(next.tokenOverrides[spec.token] ?? "");
+			const parsed = fromCssColor(seededTokens[spec.token] ?? "");
 			if (parsed) hoverColors[i] = { hex: parsed.hex, alpha: parsed.alpha };
 		});
 		hoverColors = hoverColors;
 
 		buttonsEnabled =
-			BUTTON_TOKENS.some((s) => next.tokenOverrides[s.token] !== undefined) ||
+			BUTTON_TOKENS.some((s) => seededTokens[s.token] !== undefined) ||
 			next.ruleOverrides[BUTTON_TEXT_SELECTOR] !== undefined;
 		BUTTON_TOKENS.forEach((spec, i) => {
-			const parsed = fromCssColor(next.tokenOverrides[spec.token] ?? "");
+			const parsed = fromCssColor(seededTokens[spec.token] ?? "");
 			if (parsed) buttonColors[i] = { hex: parsed.hex, alpha: parsed.alpha };
 		});
 		buttonColors = buttonColors;
@@ -502,41 +592,131 @@
 			if (parsed) buttonTextHex = parsed.hex;
 		}
 		// Animasyon: ölçeği "normal" süreden geri hesapla.
-		motionEnabled = DURATION_TOKENS.some((d) => next.tokenOverrides[d.token] !== undefined);
-		const normal = next.tokenOverrides["--fds-control-normal-duration"];
+		motionEnabled = DURATION_TOKENS.some((d) => seededTokens[d.token] !== undefined);
+		const normal = seededTokens["--fds-control-normal-duration"];
 		if (normal) {
 			const ms = Number(normal.replace(/ms\s*$/, ""));
 			if (Number.isFinite(ms)) motionScale = Number((ms / 250).toFixed(2));
 		}
-		if (next.tokenOverrides[EASING_TOKEN]) motionEasing = next.tokenOverrides[EASING_TOKEN];
+		if (seededTokens[EASING_TOKEN]) motionEasing = seededTokens[EASING_TOKEN];
+
+		// --- Renk bölümleri: temanın değerleriyle doldur ve AÇ -------------------
+		//
+		// Bunlar daha önce `adoptDoc`ta hiç ele alınmıyordu ve sonucu ikiydi:
+		//
+		//   1. Bölüm kapalı kaldığı için kontrolleri `disabled`'dı ve
+		//      `buildAdvTokens` onlardan hiçbir şey yazmıyordu — kullanıcının
+		//      "ayarı değiştiriyorum, önizleme ve CSS güncellenmiyor" dediği
+		//      durum tam olarak buydu.
+		//   2. Kapalıyken renkleri sürekli SİTE VARSAYILANINA geri yazılıyor
+		//      (`AdvancedSections.svelte` -> `if (!adv.text.on) …`). Yani
+		//      kullanıcı bölümü elle açtığında temanın renkleri değil site
+		//      varsayılanları uygulanıyor, tema gözle görülür biçimde
+		//      bozuluyordu.
+		//
+		// Ölçüt hover/buton bölümleriyle aynı: tema bu token'lardan en az
+		// birini tanımlıyorsa bölüm açılır. Tanımlamıyorsa dokunulmaz —
+		// temanın hiç ilgilenmediği bir bölümü açmak, site varsayılanlarını
+		// gereksiz yere CSS'e yazmak olurdu.
+		const seedColorSection = (
+			specs: { token: string }[],
+			section: { on: boolean; colors: { hex: string; alpha: number }[] }
+		) => {
+			if (!specs.some((spec) => seededTokens[spec.token] !== undefined)) return;
+
+			let seeded = false;
+			specs.forEach((spec, i) => {
+				const parsed = fromCssColor(seededTokens[spec.token] ?? "");
+				if (!parsed) return;
+				section.colors[i] = { hex: parsed.hex, alpha: parsed.alpha };
+				seeded = true;
+			});
+
+			// Hiçbir değer okunamadıysa bölümü AÇMIYORUZ. Açsaydık, kontroller
+			// site varsayılanlarını taşıyor olurdu ve o varsayılanlar temanın
+			// okuyamadığımız değerlerinin üstüne yazılırdı — yardım etmek
+			// yerine temayı bozardık.
+			if (seeded) section.on = true;
+		};
+
+		seedColorSection(TEXT_TOKENS, adv.text);
+		seedColorSection(SURFACE_TOKENS, adv.surface);
+		seedColorSection(LINK_TOKENS, adv.links);
+		seedColorSection(SYSTEM_TOKENS, adv.system);
+
+		// --- Avatar / banner / yorumlar ------------------------------------------
+		// Bunlar token değil KURAL yazıyor; değerleri kuralın gövdesinden
+		// çözülüyor. Aynı gerekçeyle bölüm yalnızca gerçekten okunabildiğinde
+		// açılıyor.
+		// Sayısal okumalar `resolveLength` üzerinden geçiyor: temalar bu
+		// değerleri `var()` ardında ve `!important` ile veriyor, düz metin
+		// araması hiçbirini yakalamıyordu (bkz. `cssDecls.ts`).
+		const px = (rule: string | undefined, prop: string): number | null =>
+			resolveLength(rule, prop, seededTokens);
+
+		const avatarRule = next.ruleOverrides[AVATAR_SELECTOR];
+		const avatarSize = px(avatarRule, "--fds-person-picture-size");
+		if (avatarSize !== null) {
+			adv.avatar.size = avatarSize;
+			adv.avatar.on = true;
+		}
+
+		const bannerOutline = next.ruleOverrides[BANNER_SELECTED_SELECTOR]?.match(
+			/outline-color\s*:\s*([^;!]+)/i
+		);
+		const bannerProgress = next.ruleOverrides[BANNER_PROGRESS_SELECTOR];
+		if (bannerOutline || bannerProgress) {
+			if (bannerOutline) adv.banner.outlineColor = bannerOutline[1].trim();
+			const height = px(bannerProgress, "height");
+			if (height !== null) adv.banner.progressHeight = height;
+			const radius = px(bannerProgress, "border-radius");
+			if (radius !== null) adv.banner.progressRadius = radius;
+			const background = bannerProgress?.match(/background\s*:\s*([^;!]+)/i);
+			if (background) adv.banner.progressColor = background[1].trim();
+			adv.banner.on = true;
+		}
+
+		const commentRule = next.ruleOverrides[COMMENT_SELECTOR];
+		const commentFocus =
+			next.ruleOverrides[`${COMMENT_INPUT_SELECTOR}:focus-within`] ??
+			next.ruleOverrides[COMMENT_INPUT_SELECTOR];
+		if (commentRule || commentFocus) {
+			const background = commentRule?.match(/background-color\s*:\s*([^;!]+)/i);
+			const parsed = background ? fromCssColor(background[1]) : null;
+			if (parsed) adv.comments.bg = { hex: parsed.hex, alpha: parsed.alpha };
+			const radius = px(commentRule, "border-radius");
+			if (radius !== null) adv.comments.radius = radius;
+			const outline = commentFocus?.match(/outline\s*:\s*[^;]*?solid\s+([^;!]+)/i);
+			if (outline) adv.comments.focusColor = outline[1].trim();
+			adv.comments.on = true;
+		}
 
 		// --- Gelişmiş bölümler: tüm gelişmiş ayarları ve görselleri çöz -----------
+		// Adres okuma `extractUrl` üzerinden: temalar logoyu gömülü bir SVG
+		// olarak veriyor ve o değerin içinde boşluk da tırnak da var —
+		// karakter sınıfına dayanan eski desen hiç eşleşmiyordu
+		// (bkz. `cssDecls.ts` -> `extractUrl`).
 		const resolveUrl = (rule: string | undefined, tokens: Record<string, string>): string => {
 			if (!rule) return "";
 			// 1. Doğrudan url(...) eşleşmesi
-			const direct = rule.match(/url\(\s*["']?([^"'\s)]+)["']?\s*\)/i);
-			if (direct && direct[1] && !direct[1].startsWith("var(")) {
-				return direct[1];
-			}
+			const direct = extractUrl(rule);
+			if (direct && !direct.startsWith("var(")) return direct;
+
 			// 2. Kural içindeki var(--değişken) başvurusu
 			const varMatches = Array.from(rule.matchAll(/var\(\s*(--[a-zA-Z0-9_-]+)/gi));
 			for (const v of varMatches) {
-				const varName = v[1];
-				const varValue = tokens[varName];
-				if (varValue) {
-					const innerMatch = varValue.match(/url\(\s*["']?([^"'\s)]+)["']?\s*\)/i);
-					if (innerMatch && innerMatch[1]) {
-						return innerMatch[1];
-					}
-				}
+				const varValue = tokens[v[1]];
+				if (!varValue) continue;
+				const inner = extractUrl(varValue);
+				if (inner) return inner;
 			}
 			return "";
 		};
 
 		// Logo görselini kural, gizleme seçicisi veya öncelikli değişkenlerden çöz
-		let logoImage = resolveUrl(next.ruleOverrides[LOGO_IMAGE_SELECTOR], next.tokenOverrides);
+		let logoImage = resolveUrl(next.ruleOverrides[LOGO_IMAGE_SELECTOR], seededTokens);
 		if (!logoImage) {
-			logoImage = resolveUrl(next.ruleOverrides[LOGO_IMAGE_HIDE_SELECTOR], next.tokenOverrides);
+			logoImage = resolveUrl(next.ruleOverrides[LOGO_IMAGE_HIDE_SELECTOR], seededTokens);
 		}
 		if (!logoImage) {
 			const priorityVars = [
@@ -549,13 +729,10 @@
 				"--logo"
 			];
 			for (const pVar of priorityVars) {
-				const val = next.tokenOverrides[pVar];
-				if (val) {
-					const m = val.match(/url\(\s*["']?([^"'\s)]+)["']?\s*\)/i);
-					if (m && m[1]) {
-						logoImage = m[1];
-						break;
-					}
+				const found = extractUrl(seededTokens[pVar] ?? "");
+				if (found) {
+					logoImage = found;
+					break;
 				}
 			}
 		}
@@ -569,30 +746,37 @@
 		adv.logo.text = logoText;
 		adv.logo.textOn = logoText !== "";
 
+		// NEXT-GEN rozeti gizlenmiş mi? Temalar bunu rutin olarak yapıyor;
+		// algılanmazsa kontrol kapalı görünür ve kullanıcı bir şeye
+		// dokunduğunda rozet aniden geri gelirdi.
+		adv.logo.badgeHidden = /display\s*:\s*none/i.test(
+			next.ruleOverrides[LOGO_BADGE_SELECTOR] ?? ""
+		);
+
 		const logoRowRule = next.ruleOverrides[LOGO_ROW_SELECTOR] ?? "";
-		const gapMatch = logoRowRule.match(/gap\s*:\s*(\d+)px/i);
-		if (gapMatch) adv.logo.gap = Number(gapMatch[1]);
+		const logoGap = resolveLength(logoRowRule, "gap", seededTokens);
+		if (logoGap !== null) adv.logo.gap = logoGap;
 
 		const logoImgRule = next.ruleOverrides[LOGO_IMAGE_SELECTOR] ?? "";
-		const sizeMatch = logoImgRule.match(/width\s*:\s*(\d+)px/i);
-		if (sizeMatch) adv.logo.size = Number(sizeMatch[1]);
+		const logoSize = resolveLength(logoImgRule, "width", seededTokens);
+		if (logoSize !== null) adv.logo.size = logoSize;
 
 		// Arkaplan görselini body::before, body::after, banner veya değişkenlerden çöz
-		let bgImage = resolveUrl(next.ruleOverrides[`${BG_BODY_SELECTOR}::before`], next.tokenOverrides);
+		let bgImage = resolveUrl(next.ruleOverrides[`${BG_BODY_SELECTOR}::before`], seededTokens);
 		if (!bgImage) {
 			bgImage =
-				resolveUrl(next.ruleOverrides[`${BG_BODY_SELECTOR}::after`], next.tokenOverrides) ||
-				resolveUrl(next.ruleOverrides["body::before"], next.tokenOverrides) ||
-				resolveUrl(next.ruleOverrides["body::after"], next.tokenOverrides) ||
-				resolveUrl(next.ruleOverrides[BG_BODY_SELECTOR], next.tokenOverrides) ||
-				resolveUrl(next.ruleOverrides[BG_TRANSPARENT_SELECTOR], next.tokenOverrides) ||
+				resolveUrl(next.ruleOverrides[`${BG_BODY_SELECTOR}::after`], seededTokens) ||
+				resolveUrl(next.ruleOverrides["body::before"], seededTokens) ||
+				resolveUrl(next.ruleOverrides["body::after"], seededTokens) ||
+				resolveUrl(next.ruleOverrides[BG_BODY_SELECTOR], seededTokens) ||
+				resolveUrl(next.ruleOverrides[BG_TRANSPARENT_SELECTOR], seededTokens) ||
 				resolveUrl(
 					next.ruleOverrides[
 						".scene-inner-content:has(.new-playlist)>.banner.gradient-scene"
 					],
-					next.tokenOverrides
+					seededTokens
 				) ||
-				resolveUrl(next.ruleOverrides[".banner.gradient-scene"], next.tokenOverrides);
+				resolveUrl(next.ruleOverrides[".banner.gradient-scene"], seededTokens);
 		}
 		if (!bgImage) {
 			const priorityVars = [
@@ -605,13 +789,10 @@
 				"--bg-page"
 			];
 			for (const pVar of priorityVars) {
-				const val = next.tokenOverrides[pVar];
-				if (val) {
-					const m = val.match(/url\(\s*["']?([^"'\s)]+)["']?\s*\)/i);
-					if (m && m[1]) {
-						bgImage = m[1];
-						break;
-					}
+				const found = extractUrl(seededTokens[pVar] ?? "");
+				if (found) {
+					bgImage = found;
+					break;
 				}
 			}
 		}
@@ -619,30 +800,32 @@
 		adv.bg.on = bgImage !== "";
 
 		for (const slot of MASCOT_SLOTS) {
-			const image = resolveUrl(next.ruleOverrides[slot.selector], next.tokenOverrides);
+			const image = resolveUrl(next.ruleOverrides[slot.selector], seededTokens);
 			if (image) adv.mascot.images[slot.id] = image;
 			else delete adv.mascot.images[slot.id];
 		}
 
 		// Kartlar
 		const cardRule = next.ruleOverrides[CARD_SELECTOR];
-		if (cardRule || next.tokenOverrides["--fds-card-background-default"]) {
+		if (cardRule || seededTokens["--fds-card-background-default"]) {
 			adv.cards.on = true;
 			if (cardRule) {
-				const rMatch = cardRule.match(/border-radius\s*:\s*(\d+)px/i);
-				if (rMatch) adv.cards.radius = Number(rMatch[1]);
-				const bMatch = cardRule.match(/border-width\s*:\s*(\d+)px/i);
-				if (bMatch) adv.cards.borderWidth = Number(bMatch[1]);
+				const cardRadius = resolveLength(cardRule, "border-radius", seededTokens);
+				if (cardRadius !== null) adv.cards.radius = cardRadius;
+				const cardBorder = resolveLength(cardRule, "border-width", seededTokens);
+				if (cardBorder !== null) adv.cards.borderWidth = cardBorder;
 			}
 		}
 
 		// Kenar çubuğu
 		const sidebarRule = next.ruleOverrides[SIDEBAR_SELECTOR];
-		if (sidebarRule || next.tokenOverrides[SIDEBAR_SELECTED_TOKEN.token]) {
+		if (sidebarRule || seededTokens[SIDEBAR_SELECTED_TOKEN.token]) {
 			adv.sidebar.on = true;
 			if (sidebarRule) {
-				const wMatch = sidebarRule.match(/width\s*:\s*([\d.]+)rem/i);
-				if (wMatch) adv.sidebar.width = Number(wMatch[1]);
+				// Kenar çubuğu genişliği `rem`; temalar bunu da değişkenden
+				// verebiliyor.
+				const sidebarWidth = resolveLength(sidebarRule, "width", seededTokens, "rem");
+				if (sidebarWidth !== null) adv.sidebar.width = sidebarWidth;
 			}
 		}
 
@@ -655,12 +838,33 @@
 			adv.badges.on = true;
 		}
 
+		// Gizleme ve yazı, renk anahtarından bağımsız algılanıyor: temalar
+		// rozeti çoğunlukla renklerine dokunmadan kaldırıyor.
+		const hidden = (selector: string) =>
+			/display\s*:\s*none/i.test(next.ruleOverrides[selector] ?? "");
+
+		adv.badges.badgeHidden = hidden(BADGE_SELECTOR);
+		adv.badges.releasedHidden = hidden(RELEASED_BADGE_SELECTOR);
+		adv.badges.enhancedHidden = hidden(ENHANCED_SELECTOR);
+
+		/** `::after` kuralındaki `content: "..."` değerini geri okur. */
+		const injectedText = (selector: string) => {
+			const match = next.ruleOverrides[selector]?.match(
+				/content\s*:\s*['"]((?:[^'"\\]|\\.)*)['"]/i
+			);
+			return match ? match[1].replace(/\\(["'\\])/g, "$1") : "";
+		};
+
+		adv.badges.badgeText = injectedText(BADGE_TEXT_SELECTOR);
+		adv.badges.releasedText = injectedText(RELEASED_TEXT_SELECTOR);
+		adv.badges.enhancedText = injectedText(ENHANCED_TEXT_SELECTOR);
+
 		// Kaydırma çubuğu
 		if (next.ruleOverrides[SCROLLBAR_SELECTOR]) {
 			adv.scrollbar.on = true;
 			const sbRule = next.ruleOverrides[SCROLLBAR_SELECTOR];
-			const szMatch = sbRule.match(/--os-size\s*:\s*(\d+)px/i);
-			if (szMatch) adv.scrollbar.size = Number(szMatch[1]);
+			const scrollbarSize = resolveLength(sbRule, "--os-size", seededTokens);
+			if (scrollbarSize !== null) adv.scrollbar.size = scrollbarSize;
 		}
 
 		// Oynatıcı
@@ -675,8 +879,8 @@
 		// Tipografi / Yazı Tipi
 		if (
 			next.imports.length > 0 ||
-			next.tokenOverrides["--fds-font-family-text"] ||
-			next.tokenOverrides["--fds-font-family-display"]
+			seededTokens["--fds-font-family-text"] ||
+			seededTokens["--fds-font-family-display"]
 		) {
 			adv.typo.on = true;
 			if (next.imports.length > 0) {
@@ -825,9 +1029,30 @@
 			const contents = await readCssFile(selected);
 			externalPath = selected;
 			externalDirty = false;
-			editMode = "code";
+			editorTab = "code";
 			cssText = contents;
 			adoptDoc(await importCssText(contents, KNOWN_SELECTORS));
+
+			// Editöre dosyanın HAM metnini bırakmıyoruz; sistemin gerçekten
+			// kullandığı metni yazıyoruz.
+			//
+			// Bırakıldığında üç şey birbirinden ayrışıyordu: editörde dosyanın
+			// kendisi, `doc`ta çözümlenmiş belge, önizlemede o belgeden üretilen
+			// CSS. Kullanıcının gördüğü "açtığım dosyanın bilgileri yanlış
+			// geliyor, değiştirsem de işlenmiyor" tam olarak buydu — kod
+			// editöründeki metin hiçbir şeyin kaynağı değildi.
+			//
+			// `push(true)` zorunlu: kod sekmesindeyken normal `push` kullanıcının
+			// metnini KASTEN ezmiyor (yazarken imleç zıplamasın diye). Burada
+			// ezmesi gerekiyor, çünkü henüz kullanıcının yazdığı bir şey yok.
+			// GitHub'dan içe aktarma da aynı yoldan geçiyor (`handleImport`).
+			await tick();
+			await push(true);
+
+			// Bu dosya artık "orijinal": kapalı bölümler ve sıfırlama düğmesi
+			// site varsayılanına değil buraya dönecek.
+			captureBaseline();
+
 			fileStatus = `${selected} açıldı`;
 			error = "";
 		} catch (e) {
@@ -1166,6 +1391,11 @@
 		// Gelişmiş bölümlerin tamamı (logo, maskot, kenar çubuğu, oynatıcı …).
 		adv = defaultAdv(seedMode, ramp);
 
+		// Artık düzenlenen bir tema yok: sıfırlamanın tabanı yeniden SİTENİN
+		// kendi değerleri. İçe aktarma bu çağrıdan SONRA kendi tabanını
+		// koyuyor (`captureBaseline`).
+		clearBaseline();
+
 		// Karşılaştırma tamponlarını da temizle; aksi hâlde bir sonraki reaktif
 		// tur "değişiklik yok" sanıp boş haritaları doc'a yazmayabilir.
 		lastTokenMap = "{}";
@@ -1197,6 +1427,7 @@
 	$: uiState = {
 		version: 1,
 		editMode,
+		editorTab,
 		seedMode,
 		radiusEnabled,
 		controlRadius,
@@ -1210,6 +1441,7 @@
 		motionScale,
 		motionEasing,
 		adv,
+		advBaseline,
 		viewport,
 		currentPath
 	} as EditorUiState;
@@ -1220,7 +1452,9 @@
 		seedMode: undefined,
 		viewport: undefined,
 		currentPath: undefined,
-		editMode: undefined
+		// Sekme değiştirmek projeyi "kaydedilmemiş" yapmamalı.
+		editMode: undefined,
+		editorTab: undefined
 	};
 	$: projectSignature = JSON.stringify({
 		doc: docSignature,
@@ -1242,7 +1476,8 @@
 				: "Ana Sayfa";
 
 	function restoreUi(ui: EditorUiState) {
-		editMode = ui.editMode ?? settings.defaultEditMode;
+		// Eski projelerde `editorTab` yok; kaydedilmiş kipten türetiliyor.
+		editorTab = ui.editorTab ?? tabFromMode(ui.editMode ?? settings.defaultEditMode);
 		seedMode = ui.seedMode ?? "dark";
 
 		radiusEnabled = ui.radiusEnabled ?? false;
@@ -1265,6 +1500,12 @@
 		motionEasing = ui.motionEasing ?? EASINGS[0].value;
 
 		if (ui.adv) adv = ui.adv;
+
+		// Sıfırlamanın tabanı da projeyle birlikte geliyor. Taşınmasaydı
+		// kaydedilmiş bir tema yeniden açıldığında taban sitenin
+		// varsayılanlarına düşer ve ilk aç-kapada temanın değerleri silinirdi.
+		// Alan yoksa (bu özellikten önce kaydedilmiş proje) taban sitedir.
+		advBaseline = ui.advBaseline ?? null;
 
 		viewport = ui.viewport ?? settings.defaultViewport;
 		currentPath = ui.currentPath ?? settings.defaultPreviewPath;
@@ -1341,7 +1582,7 @@
 		fileStatus = "";
 		projectStatus = "";
 
-		editMode = settings.defaultEditMode;
+		editorTab = tabFromMode(settings.defaultEditMode);
 		viewport = settings.defaultViewport;
 		currentPath = settings.defaultPreviewPath;
 
@@ -1651,12 +1892,17 @@
 			coverImage = null;
 			externalPath = null;
 			externalDirty = false;
-			editMode = "visual";
+			editorTab = "basic";
 			viewport = settings.defaultViewport;
 			currentPath = settings.defaultPreviewPath;
 
 			await tick();
 			await push(true);
+
+			// İçe aktarılan tema artık "orijinal": kapalı bölümler ve sıfırlama
+			// düğmesi site varsayılanına değil buraya döner.
+			captureBaseline();
+
 			go(currentPath);
 
 			hasOpenProject = true;
@@ -1680,7 +1926,7 @@
 		projectName = externalPath.split(/[\\/]/).pop()?.replace(/\.css$/i, "") || "Harici tema";
 		projectSource = null;
 		coverImage = null;
-		editMode = settings.defaultEditMode;
+		editorTab = tabFromMode(settings.defaultEditMode);
 		viewport = settings.defaultViewport;
 		currentPath = settings.defaultPreviewPath;
 		hasOpenProject = true;
@@ -1990,7 +2236,7 @@
 		{:else}
 			<!-- Editör: mevcut panel + önizleme yerleşimi olduğu gibi korunuyor. -->
 			<div class="shell" style="grid-template-columns: {panelWidth}px 6px 1fr">
-	<div class="panel">
+	<div class="panel" use:unclip>
 		<header>
 			<div class="row-between">
 				<TextBlock variant="subtitle">{projectName}{dirty ? " •" : ""}</TextBlock>
@@ -2045,6 +2291,8 @@
 		{/if}
 
 		<!--
+			Tek anahtar, üç sekme. Gerekçesi `editorTab`'in başındaki notta.
+
 			`on:click` burada gereksiz görünebilir: SegmentedControl zaten
 			bind:value ile değeri kendisi yazıyor. Ama o mekanizma DOM'da
 			`closest("[data-segment-id]")` araması ve modül düzeyinde paylaşılan
@@ -2052,253 +2300,238 @@
 			doğrudan atama da yapıyoruz. İkisi aynı değeri yazdığı için çakışmaz.
 		-->
 		<div class="mode-switch">
-			<SegmentedControl bind:value={editMode}>
-				<SegmentedControlButton value="visual" on:click={() => (editMode = "visual")}>
-					Görsel
+			<SegmentedControl bind:value={editorTab}>
+				<SegmentedControlButton value="basic" on:click={() => (editorTab = "basic")}>
+					Temel
 				</SegmentedControlButton>
-				<SegmentedControlButton value="code" on:click={() => (editMode = "code")}>
+				<SegmentedControlButton value="all" on:click={() => (editorTab = "all")}>
+					Tümü
+				</SegmentedControlButton>
+				<SegmentedControlButton value="code" on:click={() => (editorTab = "code")}>
 					Kod
 				</SegmentedControlButton>
 			</SegmentedControl>
 		</div>
 
-		{#if editMode === "visual"}
-			<div class="category-switch">
-				<IconButton
-					class="category-scroll"
-					aria-label="Sola kaydır"
-					disabled={!categoryScrollLeft}
-					on:click={() => scrollCategoryStrip(-1)}
-				>
-					<Icon name="chevronLeft" size={14} />
-				</IconButton>
-				<SegmentedControl bind:value={editorCategory} bind:containerElement={categoryStripEl}>
-					<SegmentedControlButton value="colors" on:click={() => (editorCategory = "colors")}>
-						Renkler
-					</SegmentedControlButton>
-					<SegmentedControlButton value="shape" on:click={() => (editorCategory = "shape")}>
-						Şekil
-					</SegmentedControlButton>
-					<SegmentedControlButton value="motion" on:click={() => (editorCategory = "motion")}>
-						Efekt
-					</SegmentedControlButton>
-					<SegmentedControlButton value="media" on:click={() => (editorCategory = "media")}>
-						Medya
-					</SegmentedControlButton>
-					<SegmentedControlButton value="components" on:click={() => (editorCategory = "components")}>
-						Bileşen
-					</SegmentedControlButton>
-					<SegmentedControlButton value="advanced" on:click={() => (editorCategory = "advanced")}>
-						Gelişmiş
-					</SegmentedControlButton>
-				</SegmentedControl>
-				<IconButton
-					class="category-scroll"
-					aria-label="Sağa kaydır"
-					disabled={!categoryScrollRight}
-					on:click={() => scrollCategoryStrip(1)}
-				>
-					<Icon name="chevronRight" size={14} />
-				</IconButton>
-			</div>
-
+		{#if editorTab !== "code"}
 			<div class="sections">
-				{#if editorCategory === "colors"}
-					<Section
-						icon="accent"
-						title="Vurgu rengi"
-						expanded
-						onReset={() => resetSection("accent")}
-					>
-						<div class="swatches">
-							{#each ramp as step, i}
-								<Tooltip text="--fds-{RAMP_NAMES[i]}: {step}">
-									<div class="swatch" style="background: hsl({step})"></div>
-								</Tooltip>
-							{/each}
-						</div>
+				<!--
+					Bölümlerin sırası ve grup başlıkları `AdvancedSections`'ta;
+					bu dosyanın kendi bölümleri oraya yuvalardan giriyor. Tek bir
+					`AdvancedSections` örneği var ve olmak zorunda: bileşen, kapalı
+					bölümlerin varsayılanlarını tazeleyen reaktif ifadeler taşıyor
+					ve iki örnek aynı `adv`ye yazsaydı birbirlerini tetikleyip
+					döngüye girerlerdi.
+				-->
+				<AdvancedSections
+					bind:adv
+					{pickImage}
+					baseline={advBaselineOrSite}
+					show={showSection}
+					grouped={editorTab === "all"}
+				>
+					<svelte:fragment slot="accent">
+						{#if showSection("accent")}
+							<Section
+								icon="accent"
+								title="Vurgu rengi"
+								expanded
+								onReset={() => resetSection("accent")}
+							>
+								<div class="swatches">
+									{#each ramp as step, i}
+										<Tooltip text="--fds-{RAMP_NAMES[i]}: {step}">
+											<div class="swatch" style="background: hsl({step})"></div>
+										</Tooltip>
+									{/each}
+								</div>
 
-						<!-- svelte-ignore a11y-label-has-associated-control -->
-						<label>
-							<TextBlock variant="caption">Ton (H) — {Math.round(accentH)}°</TextBlock>
-							<Slider
-								bind:value={accentH}
-								min={0}
-								max={360}
-								step={1}
-								suffix="°"
-								on:input={(e) => updateAccentFromSlider(extractSliderVal(e), accentS, accentL)}
-								on:change={(e) => updateAccentFromSlider(extractSliderVal(e), accentS, accentL)}
-							/>
-						</label>
-						<!-- svelte-ignore a11y-label-has-associated-control -->
-						<label>
-							<TextBlock variant="caption">Doygunluk (S) — {Math.round(accentS)}%</TextBlock>
-							<Slider
-								bind:value={accentS}
-								min={0}
-								max={100}
-								step={1}
-								suffix="%"
-								on:input={(e) => updateAccentFromSlider(accentH, extractSliderVal(e), accentL)}
-								on:change={(e) => updateAccentFromSlider(accentH, extractSliderVal(e), accentL)}
-							/>
-						</label>
-						<!-- svelte-ignore a11y-label-has-associated-control -->
-						<label>
-							<TextBlock variant="caption">Işıklılık (L) — {Math.round(accentL)}%</TextBlock>
-							<Slider
-								bind:value={accentL}
-								min={0}
-								max={100}
-								step={1}
-								suffix="%"
-								on:input={(e) => updateAccentFromSlider(accentH, accentS, extractSliderVal(e))}
-								on:change={(e) => updateAccentFromSlider(accentH, accentS, extractSliderVal(e))}
-							/>
-						</label>
+								<!-- svelte-ignore a11y-label-has-associated-control -->
+								<label>
+									<TextBlock variant="caption">Ton (H) — {Math.round(accentH)}°</TextBlock>
+									<Slider
+										bind:value={accentH}
+										min={0}
+										max={360}
+										step={1}
+										suffix="°"
+										on:input={(e) => updateAccentFromSlider(extractSliderVal(e), accentS, accentL)}
+										on:change={(e) => updateAccentFromSlider(extractSliderVal(e), accentS, accentL)}
+									/>
+								</label>
+								<!-- svelte-ignore a11y-label-has-associated-control -->
+								<label>
+									<TextBlock variant="caption">Doygunluk (S) — {Math.round(accentS)}%</TextBlock>
+									<Slider
+										bind:value={accentS}
+										min={0}
+										max={100}
+										step={1}
+										suffix="%"
+										on:input={(e) => updateAccentFromSlider(accentH, extractSliderVal(e), accentL)}
+										on:change={(e) => updateAccentFromSlider(accentH, extractSliderVal(e), accentL)}
+									/>
+								</label>
+								<!-- svelte-ignore a11y-label-has-associated-control -->
+								<label>
+									<TextBlock variant="caption">Işıklılık (L) — {Math.round(accentL)}%</TextBlock>
+									<Slider
+										bind:value={accentL}
+										min={0}
+										max={100}
+										step={1}
+										suffix="%"
+										on:input={(e) => updateAccentFromSlider(accentH, accentS, extractSliderVal(e))}
+										on:change={(e) => updateAccentFromSlider(accentH, accentS, extractSliderVal(e))}
+									/>
+								</label>
 
-						<div class="picker">
-							<TextBlock variant="caption">Palet, hex ve RGB</TextBlock>
-							<ColorPicker hex={accentHex} on:change={(e) => onAccentPick(e.detail)} />
-						</div>
+								<div class="picker">
+									<TextBlock variant="caption">Palet, hex ve RGB</TextBlock>
+									<ColorPicker hex={accentHex} on:change={(e) => onAccentPick(e.detail)} />
+								</div>
 
-						<div class="chips">
-							{#each PRESETS as preset}
-								<Button on:click={() => usePreset(preset.hsl)}>
-									<span
-										class="dot"
-										style="background: hsl({preset.hsl[0]}, {preset.hsl[1]}%, {preset.hsl[2]}%)"
-									></span>
-									{preset.name}
-								</Button>
-							{/each}
-						</div>
-					</Section>
+								<div class="chips">
+									{#each PRESETS as preset}
+										<Button on:click={() => usePreset(preset.hsl)}>
+											<span
+												class="dot"
+												style="background: hsl({preset.hsl[0]}, {preset.hsl[1]}%, {preset.hsl[2]}%)"
+											></span>
+											{preset.name}
+										</Button>
+									{/each}
+								</div>
+							</Section>
+						{/if}
+					</svelte:fragment>
+					<svelte:fragment slot="shape">
+						{#if showSection("radius")}
+							<Section icon="corner" title="Köşe yumuşaklığı" expanded onReset={() => resetSection("radius")}>
+								<ToggleSwitch bind:checked={radiusEnabled}>Yarıçapları özelleştir</ToggleSwitch>
+								<!-- svelte-ignore a11y-label-has-associated-control -->
+								<label>
+									<TextBlock variant="caption">Kontroller — {controlRadius}px</TextBlock>
+									<Slider
+										bind:value={controlRadius}
+										min={0}
+										max={16}
+										step={1}
+										disabled={!radiusEnabled}
+										suffix="px"
+									/>
+								</label>
+								<!-- svelte-ignore a11y-label-has-associated-control -->
+								<label>
+									<TextBlock variant="caption">Katmanlar (flyout, dialog) — {overlayRadius}px</TextBlock>
+									<Slider
+										bind:value={overlayRadius}
+										min={0}
+										max={24}
+										step={1}
+										disabled={!radiusEnabled}
+										suffix="px"
+									/>
+								</label>
+							</Section>
+						{/if}
+						{#if showSection("motion")}
+							<Section icon="motion" title="Hareket ve geçişler" expanded onReset={() => resetSection("motion")}>
+								<ToggleSwitch bind:checked={motionEnabled}>Geçişleri özelleştir</ToggleSwitch>
+								<TextBlock variant="caption">
+									Sitenin kendi süre token'ları ölçeklenir; yeni bir animasyon sistemi eklenmez.
+								</TextBlock>
+								<!-- svelte-ignore a11y-label-has-associated-control -->
+								<label>
+									<TextBlock variant="caption">
+										Hız — {motionScale === 0 ? "anlık" : `${motionScale.toFixed(2)}×`}
+									</TextBlock>
+									<Slider
+										bind:value={motionScale}
+										min={0}
+										max={3}
+										step={0.05}
+										disabled={!motionEnabled}
+										suffix="×"
+									/>
+								</label>
+								<TextBlock variant="caption">Yumuşatma eğrisi</TextBlock>
+								<ComboBox
+									items={EASINGS.map((e) => ({ name: e.name, value: e.value }))}
+									bind:value={motionEasing}
+									disabled={!motionEnabled}
+								/>
+								<TextBlock variant="caption">
+									{#each DURATION_TOKENS as d, i}{i > 0 ? " · " : ""}{d.label}: {Math.round(
+											d.base * motionScale
+										)}ms{/each}
+								</TextBlock>
+							</Section>
+						{/if}
+					</svelte:fragment>
+					<svelte:fragment slot="interaction">
+						{#if showSection("buttons")}
+							<Section icon="button" title="Düğme renkleri" onReset={() => resetSection("buttons")}>
+								<ToggleSwitch bind:checked={buttonsEnabled}>Buton renklerini özelleştir</ToggleSwitch>
+								{#each BUTTON_TOKENS as spec, i}
+									<ColorField
+										{spec}
+										bind:hex={buttonColors[i].hex}
+										bind:alpha={buttonColors[i].alpha}
+										disabled={!buttonsEnabled}
+									/>
+								{/each}
+								<div class="field">
+									<TextBlock variant="caption">Standart buton metni</TextBlock>
+									<TextBox bind:value={buttonTextHex} disabled={!buttonsEnabled} clearButton={false} />
+									<TextBlock variant="caption">
+										Bunun için sitede ayrı bir token yok; <code>.button</code> kuralı üzerinden ezilir.
+									</TextBlock>
+								</div>
+							</Section>
+						{/if}
+						{#if showSection("hover")}
+							<Section icon="hover" title="Fare üzerindeyken" onReset={() => resetSection("hover")}>
+								<ToggleSwitch bind:checked={hoverEnabled}>Etkileşim renklerini özelleştir</ToggleSwitch>
+								<TextBlock variant="caption">
+									Varsayılanlar sitenin kendi opaklık değerleridir. Siyah/beyaz geçişleri sitenin karanlık
+									veya aydınlık modda olmasına göre otomatik seçilir.
+								</TextBlock>
 
-					<Section icon="hover" title="Hover ve tıklama renkleri" onReset={() => resetSection("hover")}>
-						<ToggleSwitch bind:checked={hoverEnabled}>Etkileşim renklerini özelleştir</ToggleSwitch>
-						<TextBlock variant="caption">
-							Varsayılanlar sitenin kendi opaklık değerleridir. Siyah/beyaz geçişleri sitenin karanlık
-							veya aydınlık modda olmasına göre otomatik seçilir.
-						</TextBlock>
+								{#each HOVER_TOKENS as spec, i}
+									<ColorField
+										{spec}
+										bind:hex={hoverColors[i].hex}
+										bind:alpha={hoverColors[i].alpha}
+										disabled={!hoverEnabled}
+									/>
+								{/each}
+							</Section>
+						{/if}
+					</svelte:fragment>
+					<svelte:fragment slot="raw">
+						{#if showSection("raw")}
+							<Section icon="code" title="Ham CSS" onReset={() => resetSection("raw")}>
+								<StatusBar
+									severity="caution"
+									title="Dikkat"
+									message="Buraya yazdığınız CSS resmi tema token'ları dışına çıkar; site güncellemelerinde bozulabilir."
+									closable={false}
+								/>
+								<TextArea bind:value={doc.rawCss} placeholder="body &lbrace; letter-spacing: .2px; &rbrace;" />
+							</Section>
+						{/if}
+					</svelte:fragment>
+				</AdvancedSections>
 
-						{#each HOVER_TOKENS as spec, i}
-							<ColorField
-								{spec}
-								bind:hex={hoverColors[i].hex}
-								bind:alpha={hoverColors[i].alpha}
-								disabled={!hoverEnabled}
-							/>
-						{/each}
-					</Section>
-
-					<Section icon="button" title="Buton renkleri" onReset={() => resetSection("buttons")}>
-						<ToggleSwitch bind:checked={buttonsEnabled}>Buton renklerini özelleştir</ToggleSwitch>
-						{#each BUTTON_TOKENS as spec, i}
-							<ColorField
-								{spec}
-								bind:hex={buttonColors[i].hex}
-								bind:alpha={buttonColors[i].alpha}
-								disabled={!buttonsEnabled}
-							/>
-						{/each}
-						<div class="field">
-							<TextBlock variant="caption">Standart buton metni</TextBlock>
-							<TextBox bind:value={buttonTextHex} disabled={!buttonsEnabled} clearButton={false} />
-							<TextBlock variant="caption">
-								Bunun için sitede ayrı bir token yok; <code>.button</code> kuralı üzerinden ezilir.
-							</TextBlock>
-						</div>
-					</Section>
-					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="colors" />
-
-				{:else if editorCategory === "shape"}
-					<Section icon="corner" title="Köşe yuvarlaklığı" expanded onReset={() => resetSection("radius")}>
-						<ToggleSwitch bind:checked={radiusEnabled}>Yarıçapları özelleştir</ToggleSwitch>
-						<!-- svelte-ignore a11y-label-has-associated-control -->
-						<label>
-							<TextBlock variant="caption">Kontroller — {controlRadius}px</TextBlock>
-							<Slider
-								bind:value={controlRadius}
-								min={0}
-								max={16}
-								step={1}
-								disabled={!radiusEnabled}
-								suffix="px"
-							/>
-						</label>
-						<!-- svelte-ignore a11y-label-has-associated-control -->
-						<label>
-							<TextBlock variant="caption">Katmanlar (flyout, dialog) — {overlayRadius}px</TextBlock>
-							<Slider
-								bind:value={overlayRadius}
-								min={0}
-								max={24}
-								step={1}
-								disabled={!radiusEnabled}
-								suffix="px"
-							/>
-						</label>
-					</Section>
-
-					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="shape" />
-
-				{:else if editorCategory === "motion"}
-					<Section icon="motion" title="Animasyon ve geçişler" expanded onReset={() => resetSection("motion")}>
-						<ToggleSwitch bind:checked={motionEnabled}>Geçişleri özelleştir</ToggleSwitch>
-						<TextBlock variant="caption">
-							Sitenin kendi süre token'ları ölçeklenir; yeni bir animasyon sistemi eklenmez.
-						</TextBlock>
-						<!-- svelte-ignore a11y-label-has-associated-control -->
-						<label>
-							<TextBlock variant="caption">
-								Hız — {motionScale === 0 ? "anlık" : `${motionScale.toFixed(2)}×`}
-							</TextBlock>
-							<Slider
-								bind:value={motionScale}
-								min={0}
-								max={3}
-								step={0.05}
-								disabled={!motionEnabled}
-								suffix="×"
-							/>
-						</label>
-						<TextBlock variant="caption">Yumuşatma eğrisi</TextBlock>
-						<ComboBox
-							items={EASINGS.map((e) => ({ name: e.name, value: e.value }))}
-							bind:value={motionEasing}
-							disabled={!motionEnabled}
-						/>
-						<TextBlock variant="caption">
-							{#each DURATION_TOKENS as d, i}{i > 0 ? " · " : ""}{d.label}: {Math.round(
-									d.base * motionScale
-								)}ms{/each}
-						</TextBlock>
-					</Section>
-
-					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="motion" />
-
-				{:else if editorCategory === "media"}
-					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="media" />
-
-				{:else if editorCategory === "components"}
-					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="components" />
-
-				{:else if editorCategory === "advanced"}
-					<AdvancedSections bind:adv {pickImage} mode={seedMode} {ramp} category="advanced" />
-
-					<Section icon="code" title="Ham CSS" onReset={() => resetSection("raw")}>
-						<StatusBar
-							severity="caution"
-							title="Dikkat"
-							message="Buraya yazdığınız CSS resmi tema token'ları dışına çıkar; site güncellemelerinde bozulabilir."
-							closable={false}
-						/>
-						<TextArea bind:value={doc.rawCss} placeholder="body &lbrace; letter-spacing: .2px; &rbrace;" />
-					</Section>
+				{#if editorTab === "basic"}
+					<TextBlock variant="caption" class="text-secondary">
+						Burada en çok kullanılan beş ayar var. Geri kalan her şey için “Tümü”
+						sekmesine geçin.
+					</TextBlock>
 				{/if}
 			</div>
+
 		{:else}
 			<div class="sections">
 				<div class="row-between">
@@ -2748,41 +2981,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-	}
-
-	.category-switch {
-		padding: 0 1rem 0.5rem 1rem;
-		display: flex;
-		align-items: center;
-		gap: 4px;
-	}
-
-	/* Panel daraldığında altı sekme sığmayabiliyor; şerit kendi içinde yatay
-	   kaydırılıyor (kaydırma çubuğu gizli, oklar `scrollCategoryStrip`'i
-	   çağırıyor). Öğeler artık eşit genişliğe SIKIŞTIRILMIYOR — doğal
-	   genişlikleriyle taşıp kaydırılabilir oluyorlar. */
-	.category-switch :global(.segmented-control) {
-		flex: 1 1 auto;
-		display: flex;
-		min-width: 0;
-		overflow-x: auto;
-		scrollbar-width: none;
-		-ms-overflow-style: none;
-	}
-
-	.category-switch :global(.segmented-control::-webkit-scrollbar) {
-		display: none;
-	}
-
-	.category-switch :global(.segmented-control-item),
-	.category-switch :global(.segmented-control-button),
-	.category-switch :global(button) {
-		flex: 0 0 auto;
-		white-space: nowrap;
-	}
-
-	.category-switch :global(.category-scroll) {
-		flex: 0 0 auto;
 	}
 
 	.row {

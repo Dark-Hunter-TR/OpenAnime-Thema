@@ -20,9 +20,9 @@
 		IconButton,
 		PersonPicture,
 		ProgressRing,
-		TextBlock,
-		Tooltip
+		TextBlock
 	} from "fluent-svelte-extra";
+	import Tooltip from "$lib/Tooltip.svelte";
 
 	import Icon from "$lib/Icon.svelte";
 	import StatusBar from "$lib/StatusBar.svelte";

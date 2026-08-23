@@ -12,9 +12,12 @@
  *      değerleriyle yazılan CSS sitenin kendi görünümüyle aynıdır.
  */
 
+import { parseDeclarations } from "$lib/cssDecls";
 import {
 	AVATAR_SELECTOR,
 	BADGE_SELECTOR,
+	BADGE_TEXT_HIDE_SELECTOR,
+	BADGE_TEXT_SELECTOR,
 	BANNER_PROGRESS_SELECTOR,
 	BANNER_SELECTED_SELECTOR,
 	BG_BODY_SELECTOR,
@@ -26,6 +29,8 @@ import {
 	COMMENT_INPUT_SELECTOR,
 	COMMENT_SELECTOR,
 	ENHANCED_SELECTOR,
+	ENHANCED_TEXT_HIDE_SELECTOR,
+	ENHANCED_TEXT_SELECTOR,
 	FONT_PRESETS,
 	FONT_TOKENS,
 	LOGO_BADGE_SELECTOR,
@@ -47,12 +52,15 @@ import {
 	PLAYER_THUMB_SELECTOR,
 	PLAYER_TRACK_SELECTOR,
 	RELEASED_BADGE_SELECTOR,
+	RELEASED_TEXT_HIDE_SELECTOR,
+	RELEASED_TEXT_SELECTOR,
 	SCROLLBAR_SELECTOR,
 	SIDEBAR_INDICATOR_SELECTOR,
 	SIDEBAR_SELECTOR,
 	TEXT_TOKENS
 } from "$lib/advanced";
 import {
+	DEFAULT_ACCENT_RAMP,
 	LINK_TOKENS,
 	SIDEBAR_SELECTED_TOKEN,
 	SURFACE_TOKENS,
@@ -88,6 +96,15 @@ export interface AdvState {
 		text: string;
 		textSize: number;
 		maxWidth: number;
+		/**
+		 * NEXT-GEN rozetini gizle.
+		 *
+		 * Eskiden rozet hiçbir koşulda gizlenmiyordu ve arayüz bunu bir kural
+		 * olarak duyuruyordu. Oysa topluluk temaları rozeti rutin biçimde
+		 * gizliyor (`.topbar a.logo #badge { display: none !important }`) —
+		 * yani engel teknik değil, bizim eksiğimizdi.
+		 */
+		badgeHidden: boolean;
 	};
 	sidebar: {
 		on: boolean;
@@ -116,6 +133,25 @@ export interface AdvState {
 		releasedTo: string;
 		enhancedFrom: string;
 		enhancedTo: string;
+		/**
+		 * Rozetleri tamamen gizle.
+		 *
+		 * Renkten bağımsız tutuluyor: kullanıcı rozeti kaldırmak isterken
+		 * renklerini de özelleştirmek zorunda kalmamalı.
+		 */
+		badgeHidden: boolean;
+		releasedHidden: boolean;
+		enhancedHidden: boolean;
+		/**
+		 * Rozetin yazısı. Boşsa sitenin kendi yazısı kalır.
+		 *
+		 * Değiştirmenin CSS'teki tek yolu, orijinal metni basan elemanı gizleyip
+		 * yerine `::after` ile `content` yazmak — logoda da aynı kalıp
+		 * kullanılıyor (bkz. `advanced.ts` -> `BADGE_TEXT_SELECTOR`).
+		 */
+		badgeText: string;
+		releasedText: string;
+		enhancedText: string;
 	};
 	avatar: { on: boolean; size: number };
 	banner: {
@@ -155,11 +191,17 @@ const color = (hex: string, alpha = 100): ColorState => ({ hex, alpha });
  * türediği için varsayılanları da oradan çözüyoruz — sabit bir mavi yazmak
  * kullanıcının seçtiği vurgu rengiyle çelişirdi.
  */
-function rampHex(ramp: string[], index: number, fallback: string): string {
-	const step = ramp[index];
-	if (!step) return fallback;
-	const parts = step.split(",").map((p) => parseFloat(p));
-	if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return fallback;
+function rampHex(ramp: string[], index: number): string {
+	// Rampa boşsa (uygulama açılırken ilk `applyTheme` daha dönmedi) ya da
+	// bozuksa kütüphanenin VARSAYILAN rampasına düşülüyor — elle yazılmış bir
+	// yedek hex'e değil. Gerekçe: `DEFAULT_ACCENT_RAMP`.
+	const step = ramp[index] ?? DEFAULT_ACCENT_RAMP[index];
+	const parts = (step ?? "").split(",").map((p) => parseFloat(p));
+	if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
+		// Buraya yalnızca `index` rampanın dışındaysa düşülür; o bir kodlama
+		// hatası olur ve sessizce yanlış bir renk yazmaktansa görünür olmalı.
+		throw new RangeError(`rampHex: geçersiz rampa basamağı (${index})`);
+	}
 	const [h, s, l] = parts;
 	const sat = s / 100;
 	const lig = l / 100;
@@ -178,9 +220,25 @@ function rampHex(ramp: string[], index: number, fallback: string): string {
 }
 
 /** Rampa indeksleri (açıktan koyuya): 0=light-3 … 3=base … 6=dark-3. */
+const RAMP_LIGHT_2 = 1;
 const RAMP_LIGHT_1 = 2;
 const RAMP_BASE = 3;
 const RAMP_DARK_1 = 4;
+
+/**
+ * `--fds-accent-default`ın hangi rampa basamağından türediği.
+ *
+ * Kipe BAĞLI ve `accent-base` DEĞİL. Sitenin canlı CSS'inden okundu:
+ *
+ *   açık kip:  --fds-accent-default: hsl(var(--fds-accent-dark-1))
+ *   koyu kip:  --fds-accent-default: hsla(var(--fds-accent-light-2))
+ *
+ * Burada bir zamanlar `accent-base` kullanılıyordu ve koyu kipte belirgin bir
+ * hataya yol açıyordu: bu token'dan türeyen her varsayılan (NEXT-GEN rozetinin
+ * bitiş rengi, "yayınlandı" rozeti, banner çerçevesi, oynatıcı rayı…) açık
+ * mavi olması gerekirken koyu mavi çıkıyordu.
+ */
+const accentDefaultStep = (mode: string) => (mode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_2);
 
 /**
  * Varsayılan durum.
@@ -208,7 +266,7 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			// Sitede kartın kenarlığı yok; 0 = dokunma.
 			borderWidth: 0,
 			glow: false,
-			glowColor: rampHex(ramp, RAMP_LIGHT_1, "#00a2ff"),
+			glowColor: rampHex(ramp, RAMP_LIGHT_1),
 			maskOn: false,
 			// Görsel altı maskeleme başlangıç seviyesi varsayılan %60
 			maskStart: 60
@@ -227,7 +285,9 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			text: "",
 			// --fds-body-font-size: 14px
 			textSize: SITE_DEFAULTS.logoTextSize,
-			maxWidth: SITE_DEFAULTS.logoTextMaxWidth
+			maxWidth: SITE_DEFAULTS.logoTextMaxWidth,
+			// Varsayılan sitenin kendi hâli: rozet görünür.
+			badgeHidden: false
 		},
 		sidebar: {
 			on: false,
@@ -239,7 +299,7 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			indicatorHeight: SITE_DEFAULTS.sidebarIndicatorHeight,
 			indicatorRadius: SITE_DEFAULTS.sidebarIndicatorRadius,
 			// background-color: var(--fds-accent-default)
-			indicatorColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4")
+			indicatorColor: rampHex(ramp, accentDefaultStep(effectiveMode))
 		},
 		surface: { on: false, colors: seedColors(SURFACE_TOKENS, mode, ramp) },
 		links: { on: false, colors: seedColors(LINK_TOKENS, mode, ramp) },
@@ -256,22 +316,37 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 		},
 		badges: {
 			on: false,
-			// #badge: linear-gradient(135deg, hsl(var(--fds-accent-light-1)), var(--fds-accent-default))
-			badgeFrom: rampHex(ramp, RAMP_LIGHT_1, "#00a2ff"),
-			badgeTo: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			// #badge: linear-gradient(135deg, hsl(var(--fds-accent-light-1)) 0%,
+			//         var(--fds-accent-default) 100%)
+			//
+			// İkinci durak `--fds-accent-default`; hangi basamaktan türediği
+			// KİPE BAĞLI (gerekçe: `accentDefaultStep`).
+			badgeFrom: rampHex(ramp, RAMP_LIGHT_1),
+			badgeTo: rampHex(ramp, accentDefaultStep(effectiveMode)),
 			// .released-badge: linear-gradient(to right, #6371da, var(--fds-accent-tertiary))
+			//
+			// `--fds-accent-tertiary`, `--fds-accent-default` ile AYNI basamaktan
+			// türüyor, üstüne %80 alfa alıyor. Sekiz basamaklı hex ile alfa
+			// taşınıyor (`cc` = %80).
 			releasedFrom: SITE_DEFAULTS.releasedBadgeFrom,
-			releasedTo: rampHex(ramp, RAMP_BASE, "#0078d4"),
+			releasedTo: `${rampHex(ramp, accentDefaultStep(effectiveMode))}cc`,
 			// .enhanced-highlight: linear-gradient(96.58deg, #66faff -100%, #196a91)
 			enhancedFrom: SITE_DEFAULTS.enhancedFrom,
-			enhancedTo: SITE_DEFAULTS.enhancedTo
+			enhancedTo: SITE_DEFAULTS.enhancedTo,
+			// Varsayılan sitenin kendi hâli: rozetler görünür, yazıları sitenin.
+			badgeHidden: false,
+			releasedHidden: false,
+			enhancedHidden: false,
+			badgeText: "",
+			releasedText: "",
+			enhancedText: ""
 		},
 		// .default-avatar { --fds-person-picture-size: 32px }
 		avatar: { on: false, size: SITE_DEFAULTS.avatarSize },
 		banner: {
 			on: false,
 			// .slider-card.selected { outline-color: var(--fds-accent-default) }
-			outlineColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			outlineColor: rampHex(ramp, accentDefaultStep(effectiveMode)),
 			// #progress { height: .3rem; background: #fff; border-radius: 50px }
 			progressHeight: SITE_DEFAULTS.bannerProgressHeight,
 			progressColor: SITE_DEFAULTS.bannerProgressColor,
@@ -283,7 +358,7 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			// Sitede yorumun kendi arkaplanı yok; kart yüzeyini temel alıyoruz.
 			bg: seedColor("--fds-card-background-secondary", mode, ramp, 3),
 			radius: SITE_DEFAULTS.overlayRadius,
-			focusColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4")
+			focusColor: rampHex(ramp, accentDefaultStep(effectiveMode))
 		},
 		player: {
 			on: false,
@@ -293,11 +368,11 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 			// .slider-rail { block-size: 4px }
 			progressHeight: SITE_DEFAULTS.playerRailHeight,
 			railColor: seedColor("--fds-control-strong-fill-default", mode, ramp, 54),
-			trackColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
-			thumbColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			trackColor: rampHex(ramp, accentDefaultStep(effectiveMode)),
+			thumbColor: rampHex(ramp, accentDefaultStep(effectiveMode)),
 			glow: false,
 			episodeBg: seedColor("--fds-card-background-default", mode, ramp, 5),
-			currentColor: rampHex(ramp, effectiveMode === "light" ? RAMP_DARK_1 : RAMP_LIGHT_1, "#0078d4"),
+			currentColor: rampHex(ramp, accentDefaultStep(effectiveMode)),
 			cueOn: false,
 			cueSize: 20,
 			cueColor: "#ffffff",
@@ -305,6 +380,43 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 		}
 	};
 }
+
+/**
+ * Bir bölümün "kapalıyken tabandan tazelenen" hâlini kurar.
+ *
+ * Kapalı bölümlerin değerleri sürekli tabandan yeniden yazılıyor; amaç,
+ * kontrol kutularında sitenin (ya da içe aktarılan temanın) gerçek değerinin
+ * görünmesi. Ama bölümün `on` anahtarına BAĞLI OLMAYAN alanlar da varsa o
+ * tazeleme onları da eziyordu.
+ *
+ * Somut hata: rozetlerde "Rozeti gizle" anahtarı açılmıyordu. Anahtar
+ * `adv.badges` nesnesinin içinde; kullanıcı açtığı anda tepkisel ifade
+ * çalışıp `adv.badges`ı tabandan yeniden kuruyor ve anahtar geri kapanıyordu.
+ * Yazı kutuları da aynı şekilde temizleniyordu.
+ *
+ * `keep` listesindeki alanlar korunuyor. Sıfırlama düğmesi bu yoldan
+ * geçmiyor (`resetAdvSection` bölümü olduğu gibi tabana döndürür), yani
+ * "hepsini sıfırla" davranışı değişmiyor.
+ */
+export function reseedSection<T extends object>(
+	current: T,
+	baseline: T,
+	keep: readonly (keyof T)[]
+): T {
+	const next = structuredClone(baseline);
+	for (const key of keep) next[key] = current[key];
+	return next;
+}
+
+/** Rozetlerde renk anahtarına bağlı OLMAYAN alanlar. */
+export const BADGE_INDEPENDENT_FIELDS = [
+	"badgeHidden",
+	"releasedHidden",
+	"enhancedHidden",
+	"badgeText",
+	"releasedText",
+	"enhancedText"
+] as const;
 
 /**
  * Tek bir bölümü varsayılanına döndürür.
@@ -315,11 +427,9 @@ export function defaultAdv(mode = "dark", ramp: string[] = []): AdvState {
 export function resetAdvSection(
 	adv: AdvState,
 	section: AdvSection,
-	mode: string,
-	ramp: string[]
+	baseline: AdvState
 ): AdvState {
-	const fresh = defaultAdv(mode, ramp);
-	return { ...adv, [section]: fresh[section] };
+	return { ...adv, [section]: structuredClone(baseline[section]) };
 }
 
 /** CSS metin değerini güvenle tırnaklar. */
@@ -331,11 +441,37 @@ export function buildAdvImports(adv: AdvState): string[] {
 	return preset?.importUrl ? [preset.importUrl] : [];
 }
 
+/**
+ * "Yüzeyler" bölümüne AİT token'lar.
+ *
+ * `--fds-layer-background-default` iki spec listesinde birden duruyor:
+ * `CARD_TOKENS` ve `SURFACE_TOKENS`. İkisi de yazıldığında sonra gelen
+ * kazanıyordu, yani "Kartlar → Katman arka planı" kontrolü, "Yüzeyler" bölümü
+ * de açıkken hiçbir şey yapmıyordu. Ölçümle bulundu:
+ * `bun scripts/audit-controls.mjs`.
+ *
+ * Çakışma sahiplik verilerek çözülüyor; token anlamca yüzey ailesinden
+ * (kaydırma çubuğu izi, açılır katman zemini), o yüzden sahibi "Yüzeyler".
+ * Kartlar tarafında hem yazılmıyor hem de kontrolü çizilmiyor.
+ */
+export const SURFACE_OWNED_TOKENS: ReadonlySet<string> = new Set(
+	SURFACE_TOKENS.map((spec) => spec.token)
+);
+
 export function buildAdvTokens(adv: AdvState): Record<string, string> {
 	const map: Record<string, string> = {};
 
-	const put = (specs: { token: string; alpha: boolean }[], colors: ColorState[]) => {
+	const put = (
+		specs: { token: string; alpha: boolean }[],
+		colors: ColorState[],
+		skip?: ReadonlySet<string>
+	) => {
 		specs.forEach((spec, i) => {
+			// Atlanan yuvanın İNDİSİ korunuyor: `colors` dizisi spec listesiyle
+			// aynı uzunlukta ve kaydedilmiş projelerde de öyle. Listeyi
+			// filtrelemek indisleri kaydırır ve eski projelerin renkleri birer
+			// yuva kayardı.
+			if (skip?.has(spec.token)) return;
 			const state = colors[i];
 			if (!state) return;
 			const css = toCssColor(state.hex, spec.alpha ? state.alpha : 100);
@@ -344,7 +480,7 @@ export function buildAdvTokens(adv: AdvState): Record<string, string> {
 	};
 
 	if (adv.text.on) put(TEXT_TOKENS, adv.text.colors);
-	if (adv.cards.on) put(CARD_TOKENS, adv.cards.colors);
+	if (adv.cards.on) put(CARD_TOKENS, adv.cards.colors, SURFACE_OWNED_TOKENS);
 	if (adv.surface.on) put(SURFACE_TOKENS, adv.surface.colors);
 	if (adv.links.on) put(LINK_TOKENS, adv.links.colors);
 	if (adv.system.on) put(SYSTEM_TOKENS, adv.system.colors);
@@ -461,10 +597,21 @@ export function buildAdvRules(adv: AdvState): Record<string, string> {
 		map[LOGO_ROW_SELECTOR] =
 			`display: flex !important; align-items: center !important; ` +
 			`gap: ${adv.logo.gap}px !important; min-width: 0 !important; overflow: hidden !important;`;
-		// NEXT-GEN rozeti asla ezilmesin ve `::after` her zaman bir elemanın
-		// SON kutusu olduğundan (site adından sonra basılır) rozeti açıkça
-		// en sona (order: 2) sabitleyip gerçek DOM sırasından bağımsızlaştır.
-		map[LOGO_BADGE_SELECTOR] = "order: 2; flex: 0 0 auto !important; margin-left: 0 !important;";
+		// NEXT-GEN rozeti: ya gizleniyor ya da yeri sabitleniyor.
+		//
+		// Gizlenmediğinde ezilmemesi gerekiyor; `::after` her zaman bir
+		// elemanın SON kutusu olduğundan (site adından sonra basılır) rozeti
+		// açıkça en sona (order: 2) sabitleyip gerçek DOM sırasından
+		// bağımsızlaştırıyoruz.
+		//
+		// Düzen bildirimleri iki durumda da yazılıyor, `display` yalnızca
+		// gizlerken ekleniyor. İki dal farklı özellik kümeleri yazsaydı
+		// `display` kontrollerin SAHİPLENDİĞİ özellikler listesine girmez
+		// (`controlledRuleProps`), kullanıcı rozeti tekrar gösterdiğinde eski
+		// `display: none` gövdede takılı kalırdı.
+		map[LOGO_BADGE_SELECTOR] =
+			(adv.logo.badgeHidden ? "display: none !important; " : "") +
+			"order: 2; flex: 0 0 auto !important; margin-left: 0 !important;";
 		// `a.logo-button > a.logo` iç içeyse çift basmayı engelle.
 		map[LOGO_NESTED_SELECTOR] = "content: none !important; display: none !important;";
 	}
@@ -524,15 +671,99 @@ export function buildAdvRules(adv: AdvState): Record<string, string> {
 	}
 
 	// --- Rozetler ------------------------------------------------------------
-	if (adv.badges.on) {
-		map[BADGE_SELECTOR] =
-			`background: linear-gradient(${SITE_DEFAULTS.badgeGradientAngle}deg, ` +
-			`${adv.badges.badgeFrom} 0%, ${adv.badges.badgeTo} 100%) !important;`;
-		map[RELEASED_BADGE_SELECTOR] =
-			`background-image: linear-gradient(to right, ${adv.badges.releasedFrom}, ${adv.badges.releasedTo}) !important;`;
-		map[ENHANCED_SELECTOR] =
-			`background: linear-gradient(${SITE_DEFAULTS.enhancedAngle}deg, ` +
-			`${adv.badges.enhancedFrom} -100%, ${adv.badges.enhancedTo}) !important;`;
+	//
+	// Üç yetenek birbirinden BAĞIMSIZ: renk ("Rozet renklerini özelleştir"),
+	// gizleme ve yazı. Kullanıcı rozeti kaldırmak ya da yazısını değiştirmek
+	// isterken renklerini de özelleştirmek zorunda kalmamalı, o yüzden hepsi
+	// tek bir `on` anahtarına bağlanmıyor.
+	{
+		/**
+		 * Bir rozetin gövdesini parça parça kurar; boşsa anahtar hiç yazılmaz.
+		 *
+		 * Gizleme, rengi BASTIRMIYOR — ikisi de yazılıyor. Bastırsaydı iki dal
+		 * farklı özellik kümeleri üretirdi ve `controlledRuleProps` (kontrollerin
+		 * sahiplendiği özellikler) hangi dal açıksa yalnızca onunkini görürdü:
+		 * kullanıcı gizlemeyi kapattığında eski `display: none` gövdede takılı
+		 * kalırdı. Gizli bir rozette fazladan duran renk bildiriminin ise
+		 * görünür bir etkisi yok.
+		 */
+		const badgeBody = (color: string | null, hidden: boolean) => {
+			const parts: string[] = [];
+			if (hidden) parts.push("display: none !important;");
+			if (color) parts.push(color);
+			return parts.join(" ");
+		};
+
+		/**
+		 * Yazı değiştirme: orijinal metni basan elemanı gizle, yerine `::after`
+		 * ile yaz. Logodaki kalıbın aynısı; rozetin yazısını değiştirmenin
+		 * CSS'te başka yolu yok.
+		 *
+		 * Gizleme burada da yazıyı BASTIRMIYOR; gerekçesi `badgeBody` ile aynı —
+		 * bastırılsaydı yazı özellikleri kontrollerin sahiplendiği kümeden
+		 * düşer ve gizleme kapatıldığında eski değerler gövdede kalırdı.
+		 */
+		const putText = (hideSel: string, afterSel: string, text: string, style: string) => {
+			const value = text.trim();
+			if (!value) return;
+			map[hideSel] = "display: none !important;";
+			map[afterSel] = `content: ${quote(value)}; ${style}`;
+		};
+
+		const badge = badgeBody(
+			adv.badges.on
+				? `background: linear-gradient(${SITE_DEFAULTS.badgeGradientAngle}deg, ` +
+						`${adv.badges.badgeFrom} 0%, ${adv.badges.badgeTo} 100%) !important;`
+				: null,
+			adv.badges.badgeHidden
+		);
+		if (badge) map[BADGE_SELECTOR] = badge;
+
+		const released = badgeBody(
+			adv.badges.on
+				? `background-image: linear-gradient(to right, ${adv.badges.releasedFrom}, ${adv.badges.releasedTo}) !important;`
+				: null,
+			adv.badges.releasedHidden
+		);
+		if (released) map[RELEASED_BADGE_SELECTOR] = released;
+
+		const enhanced = badgeBody(
+			adv.badges.on
+				? `background: linear-gradient(${SITE_DEFAULTS.enhancedAngle}deg, ` +
+						`${adv.badges.enhancedFrom} -100%, ${adv.badges.enhancedTo}) !important;`
+				: null,
+			adv.badges.enhancedHidden
+		);
+		if (enhanced) map[ENHANCED_SELECTOR] = enhanced;
+
+		// Her rozetin yazı stili FARKLI; enjekte edilen metin orijinaliyle aynı
+		// görünsün diye üçü de kendi ölçüsüyle yazılıyor. Değerler sitenin
+		// canlı CSS'inden okundu (bkz. `SITE_DEFAULTS` başlığındaki kaynak
+		// notu); tek bir ortak stil kullanıldığında rozet yazısı orijinalinden
+		// belirgin biçimde büyük ve ince çıkıyordu.
+		putText(
+			BADGE_TEXT_HIDE_SELECTOR,
+			BADGE_TEXT_SELECTOR,
+			adv.badges.badgeText,
+			// #badge .text-block
+			"text-transform: uppercase; font-size: 10px; font-weight: 600; letter-spacing: .5px;"
+		);
+		putText(
+			RELEASED_TEXT_HIDE_SELECTOR,
+			RELEASED_TEXT_SELECTOR,
+			adv.badges.releasedText,
+			// .released-badge kendi yazı ölçüsünü ezmiyor; sitenin küçük metin
+			// ailesi kullanılıyor.
+			"font-family: var(--fds-font-family-small); font-size: var(--fds-caption-font-size); font-weight: 400;"
+		);
+		putText(
+			ENHANCED_TEXT_HIDE_SELECTOR,
+			ENHANCED_TEXT_SELECTOR,
+			adv.badges.enhancedText,
+			// .enhanced-highlight { font-size: 10px; line-height: 14px } +
+			// içindeki .text-block { font-weight: 600 }
+			"font-size: 10px; line-height: 14px; font-weight: 600;"
+		);
 	}
 
 	// --- Profil fotoğrafı ----------------------------------------------------
@@ -620,3 +851,88 @@ export const ADV_TOKEN_KEYS: string[] = [
 	.concat(SIDEBAR_SELECTED_TOKEN.token)
 	.concat(FONT_TOKENS.map((t) => t.token))
 	.concat(FONT_SIZE_TOKENS.map((t) => t.token));
+
+/**
+ * Kontrollerin bir seçicide YAZABİLECEĞİ özellik adları — seçici başına.
+ *
+ * Nerede kullanıldığı: `+page.svelte`, kontrollerin çıktısını mevcut
+ * `ruleOverrides` haritasının üstüne bindirirken bu kümeye bakıyor. Kümedeki
+ * özellikler kontrollerin sahibi sayılıp değiştiriliyor ya da (bölüm
+ * kapatılmışsa) siliniyor; kümede OLMAYAN her bildirim olduğu gibi kalıyor.
+ * Böylece harici bir dosyadan gelen ve hiçbir kontrolün karşılamadığı
+ * bildirimler kaybolmuyor (gerekçe: `cssDecls.ts` -> `mergeDeclarations`).
+ *
+ * Liste elle tutulmuyor, `buildAdvRules`'ın "her bölüm açık" çıktısından
+ * TÜRETİLİYOR. Elle tutulan bir liste bu modülle sessizce ayrı düşerdi: yeni
+ * bir özellik eklendiğinde listeye yazmayı unutan biri, o özelliğin kontrolden
+ * silinemediğini ancak kullanıcı şikâyet edince öğrenirdi.
+ */
+export function controlledRuleProps(): Record<string, Set<string>> {
+	const everything = enableEverySection(defaultAdv());
+	const out: Record<string, Set<string>> = {};
+
+	for (const [selector, body] of Object.entries(buildAdvRules(everything))) {
+		out[selector] = new Set(parseDeclarations(body).map((d) => d.property));
+	}
+	return out;
+}
+
+/** `controlledRuleProps` için: bütün bölümleri açık, bütün görselleri dolu bir durum. */
+/**
+ * Bütün bölümleri açık bir kopya döndürür.
+ *
+ * `controlledRuleProps` bunu zaten kullanıyordu; dışa açılmasının sebebi
+ * denetim: kontrollerin yazabildiği token/kural yüzeyinin tamamını üretmek
+ * (`scripts/dump-control-surface.mjs`) ancak her bölüm açıkken mümkün.
+ */
+export function enableEverySection(adv: AdvState): AdvState {
+	const next: AdvState = structuredClone(adv);
+
+	// Yalnızca bir yer tutucu; değerin kendisi önemsiz, çünkü çıktının
+	// yalnızca ÖZELLİK ADLARI okunuyor. Boş bırakılırsa `buildAdvRules`
+	// görsele bağlı kuralları hiç üretmez ve o kuralların özellikleri
+	// listeden düşerdi.
+	const PLACEHOLDER = "x";
+	const FILLED_STRINGS = new Set(["dataUri", "text", "custom"]);
+
+	/**
+	 * Bu alan bir METİN/ADRES mi (yer tutucuyla doldurulmalı), yoksa renk mi
+	 * (dokunulmamalı)?
+	 *
+	 * `Text` ekiyle biten her ad da sayılıyor. Sabit liste tek başına
+	 * yetmiyordu: rozetlere `badgeText` / `releasedText` / `enhancedText`
+	 * eklendiğinde listeye girmedikleri için boş kalıyor, `buildAdvRules` o
+	 * kuralları hiç üretmiyor ve `controlledRuleProps` onları kontrollerin
+	 * SAHİPLENDİĞİ özellikler arasında görmüyordu. Sonucu görünür bir hataydı:
+	 * kullanıcı rozete yazı yazıp sonra siliyor, `mergeRuleOverrides` eski
+	 * kuralı kaldıramıyor ve rozetin orijinal yazısı gizli kalmaya devam
+	 * ediyordu.
+	 */
+	const isTextField = (key: string) => FILLED_STRINGS.has(key) || key.endsWith("Text");
+
+	const walk = (node: Record<string, unknown>) => {
+		for (const key of Object.keys(node)) {
+			const value = node[key];
+			if (typeof value === "boolean") {
+				node[key] = true;
+			} else if (typeof value === "string") {
+				// Renk alanlarına dokunulmuyor: zaten dolular ve yer tutucu
+				// yazmak geçersiz bir renk üretirdi.
+				if (isTextField(key) && value === "") node[key] = PLACEHOLDER;
+			} else if (Array.isArray(value)) {
+				for (const item of value) {
+					if (item && typeof item === "object") walk(item as Record<string, unknown>);
+				}
+			} else if (value && typeof value === "object") {
+				walk(value as Record<string, unknown>);
+			}
+		}
+	};
+	walk(next as unknown as Record<string, unknown>);
+
+	// Maskot görselleri bir sözlük; yuvalar önceden tanımlı olmadığı için
+	// yukarıdaki gezinme onları dolduramıyor.
+	for (const slot of MASCOT_SLOTS) next.mascot.images[slot.id] = PLACEHOLDER;
+
+	return next;
+}

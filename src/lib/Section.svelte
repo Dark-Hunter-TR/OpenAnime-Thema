@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Expander, IconButton, TextBlock, Tooltip } from "fluent-svelte-extra";
+	import { Expander, IconButton, TextBlock } from "fluent-svelte-extra";
+	import Tooltip from "$lib/Tooltip.svelte";
 	import Icon from "$lib/Icon.svelte";
 	import type { IconName } from "$lib/icons";
 

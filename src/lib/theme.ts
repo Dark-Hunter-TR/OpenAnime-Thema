@@ -14,7 +14,134 @@ export interface ThemeDoc {
 	tokenOverrides: Record<string, string>;
 	/** Selector -> bildirim gövdesi. Token karşılığı olmayanlar (logo, buton metni). */
 	ruleOverrides: Record<string, string>;
+	/**
+	 * Yalnızca kontrolleri beslemek için okunan token'lar — CSS'e yazılmazlar.
+	 *
+	 * Harici temaların çoğu renklerini `.fds-theme-dark` gibi kipe bağlı bir
+	 * blokta ya da bir `@media` içinde tanımlıyor. O değerleri
+	 * `tokenOverrides`'a koymak, kapsamlarını kaybettirip yanlış bağlamlarda
+	 * uygulanmalarına yol açardı; görmezden gelmek ise kullanıcı temayı
+	 * açtığında bütün kontrollerin boş görünmesi demekti. Değerler ham CSS'te
+	 * kapsamlarıyla duruyor, kontroller buradan okuyor.
+	 *
+	 * İsteğe bağlı: Rust tarafı boşken bu alanı hiç göndermiyor.
+	 */
+	seedTokens?: Record<string, string>;
+	/**
+	 * İçe aktarılan temanın KURALLARI — çözümlenmiş, sıralı, tek tek
+	 * düzenlenebilir hâlde.
+	 *
+	 * Burası eskiden `importedCss` adında tek parça bir metindi: GitHub'dan ya
+	 * da diskten gelen dosya olduğu gibi saklanıp önizlemeye olduğu gibi
+	 * basılıyordu. Ölçülen sonuç, 103 seçicilik gerçek bir temada 101 seçicinin
+	 * modele hiç girmemesiydi — sayfaya eklenen yabancı bir stil sayfası. İki
+	 * arıza doğuruyordu: içindeki `!important` bildirimlerini (o temada 255
+	 * tane) hiçbir kontrol ezemiyordu ve tek parça olduğu için kural bazında
+	 * ele alınamıyordu.
+	 *
+	 * Artık önizlemeye giden CSS'in tamamı modelden üretiliyor. Bir kontrol bir
+	 * bildirimin sahibi olduğunda Rust o bildirimi ithal kuraldan çıkarıyor —
+	 * kontrol, sıraya ya da özgüllüğe güvenmek yerine çakışan bildirimi
+	 * ortadan kaldırarak kazanıyor.
+	 *
+	 * Sıra korunuyor: CSS'te eşit özgüllükte sonra gelen kazanır.
+	 *
+	 *   importedRules → yönetilen blok → rawCss
+	 *
+	 * `rawCss` kullanıcının kendi yazdığı kaçış kapısı ve en sonda kalıyor —
+	 * oraya yazılan bir kural kontrolleri ezebilmeli.
+	 *
+	 * Rust üretiyor ve tüketiyor; ön yüz yalnızca taşıyor.
+	 */
+	importedRules?: ImportedRule[];
+	/**
+	 * İçe aktarma ANINDAKİ özel değişken değerleri.
+	 *
+	 * Sahiplik kararı buna bakıyor: `tokenOverrides`'taki bir değer buradakiyle
+	 * aynıysa kullanıcı o token'a dokunmamıştır ve temanın kendi (kipe ya da
+	 * ekran boyutuna bağlı) tanımları korunur. Rust üretiyor ve tüketiyor.
+	 */
+	importedTokens?: Record<string, string>;
+	/**
+	 * İçe aktarma ANINDAKİ vurgu rengi.
+	 *
+	 * `importedTokens` ile aynı işi vurgu ekseninde yapıyor: kullanıcının
+	 * kaydırıcıya gerçekten dokunup dokunmadığı buradan anlaşılıyor. İçe
+	 * aktarılmış bir temada `accent`, temanın kendi vurgusudur — kullanıcının
+	 * seçimi değil; ikisi ayırt edilmediğinde tema açılır açılmaz seçili menü
+	 * öğesini boyayan bir kural yazılıyor ve temanın kendi ikon rengini
+	 * eziyordu.
+	 *
+	 * Rust üretiyor ve tüketiyor; ön yüz yalnızca taşıyor.
+	 */
+	importedAccent?: [number, number, number];
+	/**
+	 * ESKİ projelerden gelen tek parça ithal gövde.
+	 *
+	 * Yeni bir içe aktarma bunu asla doldurmuyor. Dolu geldiğinde Rust
+	 * (`apply_theme` -> `migrate_imported`) onu `importedRules`'a çeviriyor,
+	 * yani eski bir proje açıldığında da tema modele giriyor.
+	 */
+	importedCss?: string;
+	/**
+	 * İçe aktarılan temanın kendi vurgu değişkenleri ve vurgudan sapmaları.
+	 *
+	 * Gelişmiş temalar `--fds-accent-*` yerine kendi adlarını kullanıyor
+	 * (`--accent-primary` …). Bunlar olmadan vurgu kaydırıcısı temanın boyadığı
+	 * yerlere hiç dokunmuyordu. Rust üretiyor ve tüketiyor; ön yüz yalnızca
+	 * taşıyor.
+	 */
+	accentAliases?: { name: string; delta: [number, number, number]; alpha?: number }[];
+	/**
+	 * İçe aktarılan temanın kendi YUVARLAKLIK değişkenleri ve kaydırıcıdan
+	 * sapmaları (px).
+	 *
+	 * `accentAliases` ile aynı gerekçe: gelişmiş temalar
+	 * `--fds-control-corner-radius`'u okumuyor, kendi adlarını tanımlayıp
+	 * `border-radius: var(--radius-card) !important` yazıyor. Bunlar olmadan
+	 * yuvarlaklık kaydırıcısı ekranda hiçbir şeyi değiştirmiyordu.
+	 *
+	 * Rust üretiyor ve tüketiyor; ön yüz yalnızca taşıyor.
+	 */
+	radiusAliases?: { name: string; delta: number }[];
+	/**
+	 * Temanın, site token'larını kendi adlarıyla GÖLGELEYEN değişkenleri.
+	 *
+	 * `accentAliases` ve `radiusAliases` iki ekseni (renk, yuvarlaklık)
+	 * çözüyordu; bu geri kalan her kontrolü çözüyor. Sorun her eksende aynıydı:
+	 *
+	 *     :root { --bg-page: #111118; --fds-solid-background-base: #111118; }
+	 *     html  { background-color: var(--bg-page); }
+	 *
+	 * Kontrol site token'ını yazıyor, sayfa zeminini tema kendi adıyla
+	 * boyuyor — ikisi bağlanmazsa kontrol ekranda hiçbir şeye dokunmuyor.
+	 *
+	 * Rust üretiyor ve tüketiyor; ön yüz yalnızca taşıyor.
+	 */
+	tokenAliases?: { name: string; source: string }[];
 	rawCss: string;
+}
+
+/**
+ * İçe aktarılan temanın tek bir kuralı (Rust: `ImportedRule`).
+ *
+ * `at`, kuralı saran koşul at-kurallarının zinciri (`["@media (max-width: 768px)"]`)
+ * — en dıştan içe. Sarmalayıcı atılmıyor: atılsaydı yalnızca dar ekranda
+ * geçerli bir kural her ekranda geçerli olurdu.
+ *
+ * `selector` bir seçici (`.anime-card`) ya da kendi başına bir at-kuralı
+ * (`@keyframes parlama`, `@font-face`) olabilir; ikincisinde `body` bildirim
+ * değil iç içe kural taşır.
+ *
+ * `note`, kuralın hemen üstündeki açıklama yorumu. Elle yazılmış temalarda
+ * kuralın ne yaptığı orada anlatılıyor; saklanmasaydı kullanıcı temasını
+ * `.css` olarak geri kaydettiğinde dosyası açıklamalarından arınmış olurdu.
+ */
+export interface ImportedRule {
+	at?: string[];
+	selector: string;
+	body: string;
+	note?: string;
 }
 
 export interface ApplyResult {
@@ -35,6 +162,7 @@ export function defaultDoc(): ThemeDoc {
 		imports: [],
 		tokenOverrides: {},
 		ruleOverrides: {},
+		importedRules: [],
 		rawCss: ""
 	};
 }

@@ -42,32 +42,81 @@
 	force("hidden", false);
 })();
 
+/**
+ * Tema enjeksiyonu.
+ *
+ * Editörün CSS'i KENDİ `<style>` etiketimize yazılır ve sitenin özel tema
+ * sistemine (`localStorage.theme_content`) HİÇ dokunulmaz. İkisi de bilinçli
+ * ve ikisi de bir hatanın karşılığı:
+ *
+ *   1. Önceden CSS `localStorage.theme_content`'e yazılıyordu — yani editörün
+ *      çıktısı sitenin kendi "Özel Tema" yuvasına KURULUYORDU. Site açılışta o
+ *      yuvayı okuyup içeriği kendi `<style>` etiketine basıyor ve o etiket
+ *      bizimkinden SONRA geliyor. Sonuç: önizlemede görünen CSS artık bizim
+ *      değil sitenin elindeki kopyaydı. İçe aktarılan tema göründüğü hâlde
+ *      kullanıcının sonraki değişiklikleri hiç yansımıyordu — biz kendi
+ *      etiketimizi güncellerken ekranı sitenin kopyası boyuyordu.
+ *
+ *   2. Aynı sebeple `style[themeStyle]` de kullanılmıyor: o etiket SİTENİN.
+ *      Paylaşınca sahibi belirsizleşiyor ve site istediği anda üzerine
+ *      yazabiliyor.
+ *
+ * Önizleme zaten gerçek zamanlı: her değişiklikte Rust tarafı bu fonksiyonu
+ * çağırıyor. Siteye bir şey "kurmaya" gerek yok — kurulduğunda düzenlenebilir
+ * de olmuyor, çünkü artık sitenin verisi.
+ */
 (function () {
 	var INITIAL_CSS = "__OA_INITIAL_CSS__";
 	var INITIAL_MODE = "__OA_INITIAL_MODE__";
 
+	/** Bizim etiketimizin işareti — sitenin `themeStyle`'ı ile karışmasın. */
+	var MARK = "data-oa-preview";
+
 	function modeToSiteValue(mode) {
 		return mode === "light" ? "1" : mode === "dark" ? "2" : "0";
 	}
+
+	// Sitenin özel tema yuvasını boşalt.
+	//
+	// Yalnızca "yazmamak" yetmiyor: önceki sürümler oraya yazdığı için yuvada
+	// eski bir tema kalmış olabilir ve site onu açılışta yükleyip bizimkinin
+	// üstüne biner. Bu betik sitenin kendi kodundan ÖNCE çalıştığı için burada
+	// silmek, sitenin o veriyi hiç görmemesini sağlıyor.
 	try {
-		localStorage.setItem("theme_content", INITIAL_CSS);
+		localStorage.removeItem("theme_content");
 		localStorage.setItem("theme", modeToSiteValue(INITIAL_MODE));
 	} catch (e) {}
+
 	var currentCss = INITIAL_CSS;
 	var currentMode = INITIAL_MODE;
-	window.__OA_THEME_APPLY__ = function (css) {
-		currentCss = css;
-		var el = document.querySelector("style[themeStyle]");
+
+	/**
+	 * Bizim stil etiketimizi döndürür ve `<head>`in SONUNDA tutar.
+	 *
+	 * Sıra önemli: eşit özgüllükte sonra gelen kural kazanıyor. Site kendi
+	 * stillerini sonradan ekleyebildiği için, etiketimiz sona düşmediyse geri
+	 * taşınıyor. Zaten sondaysa dokunulmuyor — bir `<style>`ı yeniden eklemek
+	 * stil sayfasını söküp yeniden kurmak demek ve bu, kaydırıcı sürüklenirken
+	 * gözle görülür bir titremeye yol açardı.
+	 */
+	function styleElement() {
+		var el = document.querySelector("style[" + MARK + "]");
 		if (!el) {
 			el = document.createElement("style");
-			el.setAttribute("themeStyle", "true");
+			el.setAttribute(MARK, "");
 			el.type = "text/css";
-			(document.head || document.documentElement).appendChild(el);
 		}
+		var parent = document.head || document.documentElement;
+		if (el.parentNode !== parent || parent.lastElementChild !== el) {
+			parent.appendChild(el);
+		}
+		return el;
+	}
+
+	window.__OA_THEME_APPLY__ = function (css) {
+		currentCss = css;
+		var el = styleElement();
 		if (el.textContent !== css) el.textContent = css;
-		try {
-			localStorage.setItem("theme_content", css);
-		} catch (e) {}
 		return true;
 	};
 	window.__OA_THEME_MODE__ = function (mode) {

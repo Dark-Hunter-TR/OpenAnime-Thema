@@ -147,6 +147,27 @@ export const RELEASED_BADGE_SELECTOR = ".released-badge";
  */
 export const ENHANCED_SELECTOR = ".enhanced-highlight";
 
+/**
+ * Rozetlerin METNİNİ değiştirmek için gereken seçici çiftleri.
+ *
+ * Kalıp logodakiyle aynı (`LOGO_TEXT_HIDE_SELECTOR` + `LOGO_TEXT_SELECTOR`):
+ * sitenin kendi metnini basan eleman gizlenir, yerine `::after` ile `content`
+ * yazılır. Rozetin metnini doğrudan değiştirmenin CSS'te başka yolu yok.
+ *
+ * Metin elemanı `.text-block`: site metinlerini bu bileşenle basıyor ve
+ * `#badge` de kendi yazısını aynı sınıfla çiziyor (bkz.
+ * `LOGO_TEXT_HIDE_SELECTOR`'daki not — logo tarafı bu yüzden doğrudan çocuk
+ * seçicisi kullanmak zorunda kalmıştı).
+ */
+export const BADGE_TEXT_HIDE_SELECTOR = "#badge .text-block";
+export const BADGE_TEXT_SELECTOR = "#badge::after";
+
+export const RELEASED_TEXT_HIDE_SELECTOR = ".released-badge .text-block";
+export const RELEASED_TEXT_SELECTOR = ".released-badge::after";
+
+export const ENHANCED_TEXT_HIDE_SELECTOR = ".enhanced-highlight .text-block";
+export const ENHANCED_TEXT_SELECTOR = ".enhanced-highlight::after";
+
 // --- Profil fotoğrafı -------------------------------------------------------
 
 /**
@@ -390,6 +411,14 @@ export const KNOWN_SELECTORS: string[] = [
 	BADGE_SELECTOR,
 	RELEASED_BADGE_SELECTOR,
 	ENHANCED_SELECTOR,
+	// Rozet metnini değiştiren seçici çiftleri; içe aktarmada da tanınmalı ki
+	// başka bir temanın yazdığı rozet yazısı kontrole geri bağlansın.
+	BADGE_TEXT_HIDE_SELECTOR,
+	BADGE_TEXT_SELECTOR,
+	RELEASED_TEXT_HIDE_SELECTOR,
+	RELEASED_TEXT_SELECTOR,
+	ENHANCED_TEXT_HIDE_SELECTOR,
+	ENHANCED_TEXT_SELECTOR,
 	AVATAR_SELECTOR,
 	BANNER_SELECTED_SELECTOR,
 	BANNER_PROGRESS_SELECTOR,

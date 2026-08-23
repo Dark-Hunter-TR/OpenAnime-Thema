@@ -43,6 +43,223 @@ mod tests {
         assert!(css.contains(":root,\n.fds-theme-light,\n.fds-theme-dark"));
     }
 
+    /// Kendi ESKİ çıktımız yeniden içe aktarıldığında rampa tazelenmeli.
+    ///
+    /// Bu editörün eski bir sürümü rampayı sabit ışıklılık ekleriyle
+    /// hesaplıyordu ve açık bir vurguda üst basamakları `%100`e (beyaz)
+    /// kırpıyordu. Dosya yeniden açıldığında o değerler "tema yazarının elle
+    /// seçtiği" sayılıp korunuyor ve düzeltilmiş türetmenin ÜSTÜNE biniyordu:
+    /// üretilen blokta İKİ ayrı rampa oluyor, sonra gelen beyaz set kazanıyor
+    /// ve seçili kenar çubuğu ikonu beyaz kalmaya devam ediyordu.
+    #[test]
+    fn stale_ramp_in_our_own_block_does_not_survive_reimport() {
+        // Eski sürümün çıktısı: taban açık, üst basamaklar beyaza kırpılmış.
+        let stale = format!(
+            "{TOKENS_OPEN}\n:root:root {{\n\
+             \t--fds-accent-light-3: 202.9, 84.9%, 100%;\n\
+             \t--fds-accent-light-2: 210.9, 85.9%, 100%;\n\
+             \t--fds-accent-light-1: 216.9, 86.9%, 83.1%;\n\
+             \t--fds-accent-base: 217.9, 86.9%, 76.1%;\n\
+             \t--fds-accent-dark-1: 220.9, 86.9%, 70.1%;\n\
+             }}\n{TOKENS_CLOSE}\n"
+        );
+
+        let doc = parse_foreign_css(&stale, &[], &ThemeDoc::default());
+        let css = doc.emit_css();
+
+        // Taban korunmalı — vurgu oradan geri okunuyor.
+        assert_eq!(doc.accent, [217.9, 86.9, 76.1]);
+
+        // Ama beyaz basamaklar taşınmamalı.
+        assert!(
+            !css.contains("85.9%, 100%") && !css.contains("84.9%, 100%"),
+            "eski beyaz basamaklar korunmuş:\n{css}"
+        );
+
+        // Ve her basamak tek kez yazılmalı; iki set çakışmamalı.
+        for name in RAMP_NAMES {
+            assert_eq!(
+                css.matches(&format!("--fds-{name}:")).count(),
+                1,
+                "`{name}` iki kez yazılmış:\n{css}"
+            );
+        }
+    }
+
+    /// Kullanıcı vurguya DOKUNMADIYSA seçili-öğe kuralı yazılmamalı.
+    ///
+    /// Kullanıcının bildirdiği hata: içe aktarılan bir temada seçili kenar
+    /// çubuğu ikonu beyaz çıkıyordu. Zincir şuydu — içe aktarmada `accent`
+    /// temanın kendi vurgusu oluyor, ölçüt "kütüphane varsayılanından farklı
+    /// mı" olduğu için "kullanıcı değiştirdi" sanılıyor ve
+    /// `.list-item.selected * { color: var(--fds-accent-default) }` kuralı
+    /// yazılıyordu. O kural temanın kendi ikon rengini eziyor, koyu kipte
+    /// `--fds-accent-default` rampanın `light-2` basamağından türediği için
+    /// (ve o basamak beyaza kırpıldığı için) ikon beyaz kalıyordu.
+    #[test]
+    fn untouched_accent_does_not_repaint_the_selected_item() {
+        let theme = "\
+:root { --fds-accent-base: 217.9, 86.9%, 76.1%; }
+.list-item.selected svg { fill: var(--accent-primary) !important; }
+";
+        let mut doc = parse_foreign_css(theme, &[], &ThemeDoc::default());
+        assert_eq!(doc.imported_accent, Some([217.9, 86.9, 76.1]));
+
+        // Dokunulmadı: kural hiç yazılmamalı.
+        assert!(
+            !doc.emit_css().contains("var(--fds-accent-default)"),
+            "kullanıcı vurguya dokunmadan seçili-öğe kuralı yazılmış:\n{}",
+            doc.emit_css()
+        );
+
+        // Kaydırıcı oynatıldığında ise yazılmalı.
+        doc.accent = [10.0, 90.0, 50.0];
+        assert!(doc.emit_css().contains("var(--fds-accent-default)"));
+    }
+
+    /// Kendi ÜRETTİĞİMİZ seçili-öğe kuralı yeniden içe aktarmada taşınmamalı.
+    ///
+    /// Dosya bu editörden çıkmışsa o kuralı zaten içeriyor. İşaretleyiciler
+    /// sıyrıldığı için "temanın bir kuralı" sayılıp taşınıyordu: kullanıcı
+    /// vurguya hiç dokunmasa bile kural dosyada kalmaya devam ediyor ve
+    /// temanın kendi ikon rengini ezmeye devam ediyordu.
+    #[test]
+    fn generated_accent_rule_does_not_survive_reimport() {
+        let exported = format!(
+            "{TOKENS_OPEN}\n\
+             :root:root {{ --fds-accent-base: 217.9, 86.9%, 76.1%; }}\n\
+             .list-item.selected, .list-item.selected * {{\n\
+             \tcolor: var(--fds-accent-default) !important;\n\
+             \tfill: currentColor !important;\n\
+             }}\n{TOKENS_CLOSE}\n\
+             .list-item.selected svg {{ fill: var(--accent-primary) !important; }}\n"
+        );
+
+        let doc = parse_foreign_css(&exported, &[], &ThemeDoc::default());
+        let css = doc.emit_css();
+
+        assert!(
+            !css.contains("var(--fds-accent-default)"),
+            "eski üretilmiş kural taşınmış:\n{css}"
+        );
+        // Temanın KENDİ kuralı korunmalı.
+        assert!(css.contains("var(--accent-primary)"), "temanın kuralı kaybolmuş:\n{css}");
+    }
+
+    #[test]
+    fn tmp_trace_sidebar() {
+        let Ok(css) = std::fs::read_to_string("D:/tema2.css") else { return };
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/control-surface.json"
+        ))
+        .expect("control-surface.json yok");
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let known: Vec<String> = v["rules"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+
+        let doc = parse_foreign_css(&css, &known, &ThemeDoc::default());
+        println!("rule_overrides ({}):", doc.rule_overrides.len());
+        for (k, body) in &doc.rule_overrides {
+            if k.contains("list-item") || k.contains("sidebar") || k.contains("selected") {
+                println!("  [{k}]\n     {}", body.replace('\n', " "));
+            }
+        }
+        println!("\nseed_tokens icinde selected:");
+        for (k, val) in &doc.seed_tokens {
+            if k.contains("selected") || k.contains("accent-primary") {
+                println!("  {k} = {val}");
+            }
+        }
+    }
+
+    /// AÇIK bir vurguda üst basamaklar beyaza çökmemeli.
+    ///
+    /// Kullanıcının bildirdiği hata: içe aktarılan bir temada seçili kenar
+    /// çubuğu ikonu beyaz çıkıyordu. O temanın vurgusu `217.9, 86.9%, 76.1%`
+    /// — zaten açık. Işıklılık farkları SABİT eklendiği için `light-2`
+    /// 76.1 + 27 = 103.1 → %100'e kırpılıyor, yani düpedüz beyaz oluyordu.
+    /// Koyu kipte `--fds-accent-default` tam olarak `light-2`den türediği için
+    /// vurguyla boyanan her şey beyaza dönüyordu.
+    #[test]
+    fn light_accent_keeps_its_ramp_distinct() {
+        let ramp = derive_ramp([217.9, 86.9, 76.1]);
+
+        for (i, step) in ramp.iter().enumerate() {
+            assert!(
+                step[2] < 100.0,
+                "basamak {i} beyaza çökmüş: {:?}",
+                step
+            );
+        }
+
+        // Basamaklar birbirinden ayrışmalı: açıktan koyuya kesintisiz azalan
+        // bir ışıklılık dizisi. Kırpma olduğunda üstteki ikisi eşitleniyordu.
+        for pair in ramp.windows(2) {
+            assert!(
+                pair[0][2] > pair[1][2],
+                "basamaklar ayrışmıyor: {:?} -> {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
+
+    /// KOYU bir vurguda da aynısı — alt basamaklar siyaha çökmemeli.
+    #[test]
+    fn dark_accent_keeps_its_ramp_distinct() {
+        let ramp = derive_ramp([260.0, 70.0, 12.0]);
+
+        for (i, step) in ramp.iter().enumerate() {
+            assert!(step[2] > 0.0, "basamak {i} siyaha çökmüş: {:?}", step);
+        }
+        for pair in ramp.windows(2) {
+            assert!(pair[0][2] > pair[1][2], "basamaklar ayrışmıyor");
+        }
+    }
+
+    /// Rampa DIŞINDAKİ vurgu token'ları yazılmamalı.
+    ///
+    /// Onları kütüphane rampadan türetiyor ve türetme KİPE BAĞLI. Sitenin
+    /// canlı CSS'inden okundu:
+    ///
+    /// ```text
+    /// .fds-theme-light { --fds-accent-default: hsl(var(--fds-accent-dark-1)) }
+    /// .fds-theme-dark  { --fds-accent-default: hsla(var(--fds-accent-light-2)) }
+    /// ```
+    ///
+    /// Bir zamanlar hepsi `hsl(var(--fds-accent-base))` olarak yazılıyordu.
+    /// Değer yanlıştı ve yönetilen blok iki kipi birden kapsadığı için
+    /// kütüphanenin doğru kurallarını da eziyordu: koyu kipte bu token'dan
+    /// türeyen her şey (rozet gradyanının ucu, banner çerçevesi, oynatıcı
+    /// rayı, bağlantı renkleri) açık mavi olması gerekirken koyu çıkıyordu.
+    #[test]
+    fn mode_dependent_accent_tokens_are_left_to_the_library() {
+        let doc = ThemeDoc {
+            accent: [280.0, 80.0, 50.0],
+            ..Default::default()
+        };
+        let css = doc.emit_css();
+
+        for name in [
+            "--fds-accent-default:",
+            "--fds-accent-secondary:",
+            "--fds-accent-tertiary:",
+            "--fds-accent-text-primary:",
+            "--fds-accent-text-secondary:",
+            "--fds-accent-text-tertiary:",
+        ] {
+            assert!(!css.contains(name), "kipe bağlı token yazılmış: {name}\n{css}");
+        }
+
+        // Referans olarak KULLANMAK serbest; sorun onu TANIMLAMAKtı.
+        assert!(css.contains("var(--fds-accent-default)"));
+    }
+
     #[test]
     fn hue_wraps_around_360() {
         let ramp = derive_ramp([355.0, 100.0, 42.0]);
@@ -181,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn without_marker_controls_preserved_text_is_raw() {
+    fn without_marker_text_becomes_the_base_layer() {
         let current = ThemeDoc {
             accent: [300.0, 50.0, 50.0],
             control_corner_radius: Some(9.0),
@@ -190,7 +407,50 @@ mod tests {
         let parsed = parse_css("body { color: red; }", &[], &current);
         assert_eq!(parsed.accent, [300.0, 50.0, 50.0], "accent sıfırlanmamalı");
         assert_eq!(parsed.control_corner_radius, Some(9.0));
-        assert_eq!(parsed.raw_css, "body { color: red; }");
+        // İşaretleyici yoksa metin yabancı bir tema sayılıyor ve TABAN
+        // katmanına düşüyor; kullanıcının kendi ham CSS'i henüz boş.
+        assert_eq!(parsed.imported_rules.len(), 1);
+        assert_eq!(parsed.imported_rules[0].selector, "body");
+        assert_eq!(parsed.imported_rules[0].body, "color: red;");
+        assert!(parsed.imported_css.is_empty(), "ham blok artık üretilmiyor");
+        assert_eq!(parsed.raw_css, "");
+    }
+
+    /// İçe aktarılan tema TABAN; kontroller onun ÜSTÜNE biner.
+    ///
+    /// Kullanıcının bildirdiği hatanın tam karşılığı: GitHub'dan ya da diskten
+    /// gelen bir tema önizlemede görünüyor, ama sonrasında hiçbir kontrol
+    /// değişikliği yansımıyordu. Sebebi yayılma sırasıydı — içe aktarılan gövde
+    /// yönetilen bloktan SONRA yazıldığı için, eşit özgüllükte her zaman o
+    /// kazanıyordu. Bu test sırayı sabitliyor.
+    #[test]
+    fn imported_rules_are_the_base_layer() {
+        let doc = ThemeDoc {
+            accent: [120.0, 60.0, 40.0],
+            imported_rules: vec![crate::theme::models::ImportedRule {
+                selector: ".ithal".into(),
+                body: "color: red;".into(),
+                ..Default::default()
+            }],
+            raw_css: ".kullanici { color: blue; }".into(),
+            ..Default::default()
+        };
+        let css = doc.emit_css();
+
+        let imported = css.find(".ithal").expect("içe aktarılan gövde yazılmamış");
+        let block_open = css.find(TOKENS_OPEN).expect("yönetilen blok yok");
+        let block_close = css.find(TOKENS_CLOSE).expect("yönetilen blok kapanmıyor");
+        let user = css.find(".kullanici").expect("kullanıcının ham CSS'i yazılmamış");
+
+        assert!(imported < block_open, "içe aktarılan tema bloktan ÖNCE gelmeli");
+        assert!(block_close < user, "kullanıcının ham CSS'i bloktan SONRA gelmeli");
+
+        // Ve tur: iki katman karışmadan geri okunmalı.
+        let round = parse_css(&css, &[], &doc);
+        assert_eq!(round.imported_rules.len(), 1);
+        assert_eq!(round.imported_rules[0].selector, ".ithal");
+        assert_eq!(round.imported_rules[0].body, "color: red;");
+        assert_eq!(round.raw_css, ".kullanici { color: blue; }");
     }
 
     #[test]
@@ -198,8 +458,8 @@ mod tests {
         let doc = ThemeDoc::default();
         let text = format!("h1 {{ color: red; }}\n{TOKENS_OPEN}\n{TOKENS_CLOSE}\nh2 {{ color: blue; }}");
         let parsed = parse_css(&text, &[], &doc);
-        assert!(parsed.raw_css.contains("h1"));
-        assert!(parsed.raw_css.contains("h2"));
+        assert!(preserved(&parsed).contains("h1"));
+        assert!(preserved(&parsed).contains("h2"));
     }
 
     #[test]
@@ -214,6 +474,32 @@ mod tests {
         assert!(css.contains("--fds-control-corner-radius: 12px;"));
         assert!(css.contains("--fds-overlay-corner-radius: 20px;"));
         assert!(css.contains("letter-spacing"));
+    }
+
+    /// Yönetilen bloğun DIŞINDA korunan her şey, tek metin hâlinde.
+    ///
+    /// Testlerin çoğu "şu kural kayboldu mu" diye soruyor; metnin hangi
+    /// katmanda durduğu (taban mı, kullanıcının ham CSS'i mi) ayrı ve keskin
+    /// bir testin konusu: `imported_rules_are_the_base_layer`.
+    fn preserved(doc: &ThemeDoc) -> String {
+        format!("{}\n{}", imported_text(&doc.imported_rules), doc.raw_css)
+    }
+
+    /// İthal kuralları okunabilir CSS'e çevirir.
+    ///
+    /// `emit_css`in kendi yazıcısı KULLANILMIYOR: o, kontrollerin sahiplendiği
+    /// bildirimleri eliyor. Bir kuralın modele girip girmediğini sınarken bu
+    /// eleme sonucu gizlerdi.
+    fn imported_text(rules: &[crate::theme::models::ImportedRule]) -> String {
+        rules
+            .iter()
+            .map(|rule| {
+                let at = rule.at.join(" ");
+                let note = rule.note.clone().unwrap_or_default();
+                format!("{note}\n{at} {} {{ {} }}", rule.selector, rule.body)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn known() -> Vec<String> {
@@ -275,11 +561,11 @@ mod tests {
         let parsed = parse_foreign_css(css, &known(), &doc);
 
         assert_eq!(parsed.accent, [200.0, 50.0, 50.0]);
-        assert!(parsed.raw_css.contains(".ozel-rozet"));
-        assert!(parsed.raw_css.contains("linear-gradient"));
-        assert!(parsed.raw_css.contains("tanımadığımız"));
-        assert!(parsed.raw_css.contains("@media"));
-        assert!(parsed.raw_css.contains("10, 10%, 10%"));
+        assert!(preserved(&parsed).contains(".ozel-rozet"));
+        assert!(preserved(&parsed).contains("linear-gradient"));
+        assert!(preserved(&parsed).contains("tanımadığımız"));
+        assert!(preserved(&parsed).contains("@media"));
+        assert!(preserved(&parsed).contains("10, 10%, 10%"));
     }
 
     #[test]
@@ -289,19 +575,48 @@ mod tests {
         let parsed = parse_foreign_css(css, &known(), &doc);
 
         assert_eq!(parsed.accent, [12.0, 88.0, 55.0]);
-        assert!(parsed.raw_css.contains("color-scheme: dark"));
+        assert!(preserved(&parsed).contains("color-scheme: dark"));
     }
 
+    /// Rampa basamağı yalnızca TÜRETİLENDEN FARKLIYSA korunuyor.
+    ///
+    /// Kural değere bakıyor, isme değil: türetilenle aynı değer gereksiz bir
+    /// kopya olurdu (her turda blok şişerdi), farklı bir değer ise temanın
+    /// bilinçli kararı. Eskiden ada bakılıp hepsi atılıyordu ve bu, dosyada
+    /// açıkça yazan rengi sessizce değiştiriyordu.
     #[test]
-    fn derived_accent_steps_do_not_enter_map() {
+    fn derived_accent_step_matching_base_is_not_duplicated() {
         let doc = ThemeDoc::default();
-        let css = ":root { --fds-accent-base: 280, 70%, 50%; --fds-accent-dark-1: 1, 2%, 3%; }";
-        let parsed = parse_foreign_css(css, &known(), &doc);
+        // 280, 70%, 50% tabanının türettiği dark-1 basamağı.
+        let derived_dark_1 = fmt_triplet(derive_ramp([280.0, 70.0, 50.0])[4]);
+        let css = format!(
+            ":root {{ --fds-accent-base: 280, 70%, 50%; --fds-accent-dark-1: {derived_dark_1}; }}"
+        );
+        let parsed = parse_foreign_css(&css, &known(), &doc);
 
         assert_eq!(parsed.accent, [280.0, 70.0, 50.0]);
         assert!(
             !parsed.token_overrides.contains_key("--fds-accent-dark-1"),
-            "türetilen basamak tabandan yeniden üretilir"
+            "tabandan yeniden üretilecek basamak ikinci kez yazılmamalı"
+        );
+    }
+
+    #[test]
+    fn hand_written_accent_step_survives() {
+        let doc = ThemeDoc::default();
+        // ytanime teması tam olarak bunu yapıyor: tabanı sitenin
+        // varsayılanında bırakıp tek tek basamakları beyaza çekiyor.
+        let css = ":root { --fds-accent-base: 206, 100%, 42%; --fds-accent-light-3: 0, 0%, 100%; }";
+        let parsed = parse_foreign_css(css, &known(), &doc);
+
+        assert_eq!(
+            parsed.token_overrides.get("--fds-accent-light-3").map(String::as_str),
+            Some("0, 0%, 100%"),
+            "dosyanın elle yazdığı basamak korunmalı"
+        );
+        assert!(
+            parsed.emit_css().contains("--fds-accent-light-3: 0, 0%, 100%"),
+            "korunan basamak üretilen CSS'e de yazılmalı"
         );
     }
 
@@ -316,8 +631,8 @@ mod tests {
         let parsed = parse_foreign_css(css, &known(), &doc);
 
         assert_eq!(parsed.accent, [100.0, 40.0, 40.0]);
-        assert!(parsed.raw_css.contains(".ozel::after"));
-        assert!(parsed.raw_css.contains("color: lime"));
+        assert!(preserved(&parsed).contains(".ozel::after"));
+        assert!(preserved(&parsed).contains("color: lime"));
     }
 
     #[test]
@@ -328,7 +643,7 @@ mod tests {
         let parsed = parse_foreign_css(css, &known(), &doc);
 
         assert_eq!(parsed.imports, vec!["https://fonts.googleapis.com/css2?family=Inter"]);
-        assert!(!parsed.raw_css.contains("@import"));
+        assert!(!preserved(&parsed).contains("@import"));
     }
 
     #[test]
@@ -344,7 +659,11 @@ mod tests {
 
         assert!(emitted.contains("--fds-accent-base: 340, 82%, 52%;"));
         assert!(emitted.contains("--fds-text-primary: #fff;"));
-        assert!(emitted.contains("border-radius: 14px;"));
+        // Kontrole taşınan kural artık ağırlıklı yazılıyor: ithal tema
+        // varken bildirimler `!important` alıyor, yoksa temanın kendi
+        // `!important` bildirimlerini yenemiyorlardı (bkz.
+        // `fidelity_tests::control_rules_outweigh_the_imported_theme`).
+        assert!(emitted.contains("border-radius: 14px !important;"), "{emitted}");
         assert!(emitted.contains(".ozel-rozet"));
     }
 
@@ -353,7 +672,7 @@ mod tests {
         let doc = ThemeDoc::default();
         let text = ".ozel { color: red; }";
         let parsed = parse_css(text, &[], &doc);
-        assert!(parsed.raw_css.contains(".ozel"));
+        assert!(preserved(&parsed).contains(".ozel"));
         assert!(parsed.rule_overrides.is_empty());
         assert_eq!(parsed.accent, doc.accent);
     }
@@ -382,7 +701,15 @@ mod tests {
 "#;
         let parsed = parse_foreign_css(css, &known(), &doc);
 
-        assert!((parsed.accent[0] - 217.0).abs() < 2.0, "primary variable mapped to accent");
+        // Saklanan değer rampanın TABANI; temanın rengi ise sitenin boyamada
+        // kullandığı basamakta (`--fds-accent-default`) çıkmalı. Eskiden
+        // tabanın kendisi karşılaştırılıyordu, ama site o basamağı değil
+        // türetileni kullanıyor (gerekçe: `color::base_for_step`).
+        let painted = derive_ramp(parsed.accent)[accent_default_step(false)];
+        assert!(
+            (painted[0] - 217.0).abs() < 2.0,
+            "tema rengi boyanan basamakta çıkmalı: {painted:?}"
+        );
         assert_eq!(parsed.control_corner_radius, Some(12.0), "border-radius mapped to control_corner_radius");
     }
 
@@ -407,7 +734,13 @@ body {
 "#;
         let parsed = parse_foreign_css(css, &known(), &doc);
 
-        assert!((parsed.accent[0] - 221.0).abs() < 2.0, "var() resolved accent mapped");
+        // `var()` zinciri çözülmeli ve temanın rengi sitenin boyadığı
+        // basamakta çıkmalı (gerekçe: `color::base_for_step`).
+        let painted = derive_ramp(parsed.accent)[accent_default_step(false)];
+        assert!(
+            (painted[0] - 221.0).abs() < 2.0,
+            "var() ile gelen tema rengi boyanan basamakta çıkmalı: {painted:?}"
+        );
         assert_eq!(parsed.control_corner_radius, Some(8.0), "border-radius mapped");
         assert_eq!(
             parsed.token_overrides.get("--fds-solid-background-base").map(String::as_str),
@@ -417,7 +750,7 @@ body {
             parsed.token_overrides.get("--fds-text-primary").map(String::as_str),
             Some("#c0caf5")
         );
-        assert!(parsed.raw_css.contains("font-family"), "font-family preserved in raw_css");
+        assert!(preserved(&parsed).contains("font-family"), "font-family preserved in raw_css");
     }
 
     #[test]
@@ -442,4 +775,6 @@ body {
             Some("url('https://i.imgur.com/2BdJVda.png')")
         );
     }
+
+
 }

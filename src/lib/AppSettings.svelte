@@ -41,6 +41,7 @@
 	 * geçiriyor ve kuralını kendi yazıyor (bkz. aşağıdaki style bloğu).
 	 */
 	import { createEventDispatcher } from "svelte";
+	import { unclip } from "$lib/unclip";
 	import { Button, ComboBox, Expander, TextBlock, ToggleSwitch } from "fluent-svelte-extra";
 
 	import AccountCard from "$lib/AccountCard.svelte";
@@ -122,8 +123,12 @@
 		{ name: "Koyu", value: "dark" }
 	];
 
+	// Editör sekmeleri artık Temel · Tümü · Kod. Ayar yalnızca "görsel mi kod
+	// mu" ikilisini tutuyor ve "visual" seçildiğinde editör Temel'de açılıyor;
+	// "Tümü" ayrı bir varsayılan olarak sunulmuyor çünkü tek tıklık bir geçiş
+	// için ayarların depolanan biçimini göçürmeye değmez.
 	const editModeItems = [
-		{ name: "Görsel", value: "visual" },
+		{ name: "Temel", value: "visual" },
 		{ name: "Kod", value: "code" }
 	];
 
@@ -187,7 +192,7 @@
 					: "Her girişte sorulur";
 </script>
 
-<div class="page">
+<div class="page" use:unclip>
 	<!-- Sitede başlık tek satır: `TextBlock variant="title"` + hemen altında
 	     `<hr class="horizontal" style="margin: 1rem 0px;">`. Alt başlık yok. -->
 	<TextBlock variant="title">Ayarlar</TextBlock>

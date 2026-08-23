@@ -1,0 +1,244 @@
+{
+	"note": "Üretilmiş dosya — `bun scripts/dump-control-surface.mjs`.",
+	"tokens": [
+		"--fds-accent-default",
+		"--fds-accent-secondary",
+		"--fds-accent-tertiary",
+		"--fds-accent-text-primary",
+		"--fds-accent-text-secondary",
+		"--fds-accent-text-tertiary",
+		"--fds-body-font-size",
+		"--fds-body-large-font-size",
+		"--fds-caption-font-size",
+		"--fds-card-background-default",
+		"--fds-card-background-secondary",
+		"--fds-card-stroke-default",
+		"--fds-control-fast-duration",
+		"--fds-control-fast-out-slow-in-easing",
+		"--fds-control-faster-duration",
+		"--fds-control-fill-default",
+		"--fds-control-fill-secondary",
+		"--fds-control-fill-tertiary",
+		"--fds-control-normal-duration",
+		"--fds-control-slow-duration",
+		"--fds-control-solid-fill-default",
+		"--fds-control-stroke-default",
+		"--fds-display-font-size",
+		"--fds-focus-stroke-inner",
+		"--fds-focus-stroke-outer",
+		"--fds-font-family-display",
+		"--fds-font-family-small",
+		"--fds-font-family-text",
+		"--fds-layer-background-alt",
+		"--fds-layer-background-default",
+		"--fds-smoke-background-default",
+		"--fds-solid-background-base",
+		"--fds-solid-background-secondary",
+		"--fds-solid-background-tertiary",
+		"--fds-subtitle-font-size",
+		"--fds-subtle-fill-secondary",
+		"--fds-subtle-fill-tertiary",
+		"--fds-system-attention",
+		"--fds-system-caution",
+		"--fds-system-critical",
+		"--fds-system-success",
+		"--fds-text-on-accent-primary",
+		"--fds-text-primary",
+		"--fds-text-secondary",
+		"--fds-title-font-size",
+		"--fds-title-large-font-size"
+	],
+	"rules": {
+		".anime-card, .slider-card, .grid-view-item": [
+			"border-radius"
+		],
+		".anime-card:hover, .slider-card:hover, .grid-view-item:hover": [
+			"transform",
+			"box-shadow"
+		],
+		".anime-card #main, .grid-view-item img, .slider-card img": [
+			"-webkit-mask-image",
+			"mask-image"
+		],
+		"body, .page, .scene-inner-content, .openanime-scene-controller, .os-viewport": [
+			"background-color"
+		],
+		"body::before": [
+			"content",
+			"position",
+			"inset",
+			"z-index",
+			"background-image",
+			"background-size",
+			"background-position",
+			"background-repeat"
+		],
+		".topbar a.logo img, .topbar a.logo svg, .topbar a.logo-button img, .topbar a.logo-button svg": [
+			"display"
+		],
+		".topbar a.logo::before, .topbar a.logo-button::before": [
+			"content",
+			"display",
+			"order",
+			"flex",
+			"width",
+			"height",
+			"background"
+		],
+		".topbar a.logo > .text-block, .topbar a.logo-button > .text-block": [
+			"display"
+		],
+		".topbar a.logo::after, .topbar a.logo-button::after": [
+			"content",
+			"display",
+			"order",
+			"font-family",
+			"font-size",
+			"font-weight",
+			"line-height",
+			"color",
+			"flex",
+			"min-width",
+			"max-width",
+			"overflow",
+			"text-overflow",
+			"white-space"
+		],
+		".topbar a.logo, .topbar a.logo-button": [
+			"display",
+			"align-items",
+			"gap",
+			"min-width",
+			"overflow"
+		],
+		".topbar a.logo #badge, .topbar a.logo-button #badge": [
+			"order",
+			"flex",
+			"margin-left"
+		],
+		".topbar a.logo-button a.logo::before, .topbar a.logo-button a.logo::after": [
+			"content",
+			"display"
+		],
+		".setsuki #image": [
+			"content",
+			"object-fit"
+		],
+		"#setsuki": [
+			"content",
+			"object-fit"
+		],
+		"#notification-setsuki": [
+			"content",
+			"object-fit",
+			"width",
+			"height"
+		],
+		"#download-setsuki": [
+			"content",
+			"object-fit",
+			"width",
+			"height"
+		],
+		"#mobile-notification-setsuki": [
+			"content",
+			"object-fit",
+			"width",
+			"height"
+		],
+		".sidebar": [
+			"min-width",
+			"max-width"
+		],
+		".list-item::before": [
+			"inline-size",
+			"block-size",
+			"border-radius",
+			"background-color"
+		],
+		".os-scrollbar": [
+			"--os-size",
+			"--os-handle-bg",
+			"--os-handle-bg-hover",
+			"--os-handle-bg-active",
+			"--os-track-bg-hover",
+			"--os-track-bg-active",
+			"--os-handle-border-radius",
+			"--os-track-border-radius"
+		],
+		"#badge": [
+			"background"
+		],
+		".released-badge": [
+			"background-image"
+		],
+		".enhanced-highlight": [
+			"background"
+		],
+		".topbar #account .person-picture-container": [
+			"--fds-person-picture-size",
+			"min-width",
+			"min-height"
+		],
+		".slider-card.selected": [
+			"outline-color"
+		],
+		".slider-card #progress": [
+			"height",
+			"background",
+			"border-radius"
+		],
+		".comment": [
+			"background-color",
+			"border-radius",
+			"padding"
+		],
+		".input-wrapper:focus-within": [
+			"outline",
+			"outline-offset"
+		],
+		".bottom-controls": [
+			"background-color"
+		],
+		".openanime-scene-controller button": [
+			"color"
+		],
+		".openanime-scene-controller button svg, .bottom-controls button svg path": [
+			"fill"
+		],
+		".slider.orientation-horizontal": [
+			"color",
+			"filter"
+		],
+		".slider.orientation-horizontal .slider-rail": [
+			"block-size",
+			"background-color"
+		],
+		".slider.orientation-horizontal .slider-track": [
+			"background-color"
+		],
+		".slider.orientation-horizontal .slider-thumb": [
+			"background-color"
+		],
+		".player-episode-list-item": [
+			"background-color"
+		],
+		".player-episode-list-item.currentEpisode": [
+			"border-color",
+			"box-shadow"
+		],
+		"video::cue": [
+			"font-size",
+			"color",
+			"background",
+			"text-shadow"
+		],
+		".list-item [id='label']": [],
+		".input-wrapper": [],
+		".topbar a.logo > img, .topbar a.logo > svg, .topbar a.logo-button > img, .topbar a.logo-button > svg": [],
+		"body": [],
+		"body::after": [],
+		".banner.gradient-scene": [],
+		".scene-inner-content:has(.new-playlist)>.banner.gradient-scene": []
+	}
+}

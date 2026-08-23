@@ -15,9 +15,10 @@
 		MenuFlyoutDivider,
 		MenuFlyoutItem,
 		TextBlock,
-		TextBox,
-		Tooltip
+		TextBox
 	} from "fluent-svelte-extra";
+	import Tooltip from "$lib/Tooltip.svelte";
+	import { unclip } from "$lib/unclip";
 
 	import GithubImportDialog from "$lib/GithubImportDialog.svelte";
 	import Icon from "$lib/Icon.svelte";
@@ -93,7 +94,7 @@
 	let importOpen = false;
 </script>
 
-<div class="page">
+<div class="page" use:unclip>
 	<header class="head">
 		<TextBlock variant="title">Ana Sayfa</TextBlock>
 		<TextBlock variant="body" class="text-secondary">

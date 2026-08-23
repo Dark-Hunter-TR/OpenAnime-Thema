@@ -5,6 +5,8 @@ pub mod parse;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod fidelity_tests;
 
 pub use color::*;
 pub use models::*;

@@ -28,8 +28,13 @@ struct ApplyResult {
 fn apply_theme(
     app: AppHandle,
     state: State<ThemeState>,
-    doc: ThemeDoc,
+    mut doc: ThemeDoc,
 ) -> Result<ApplyResult, String> {
+    // Eski projelerde ithal tema tek parça bir metindi ve sayfaya olduğu gibi
+    // basılıyordu. Ön yüzden gelen HER belge buradan geçtiği için proje açılışı
+    // da dahil tek bir kapı yetiyor (bkz. `ThemeDoc::migrate_imported`).
+    doc.migrate_imported();
+
     let (css, mode, ramp) = {
         let mut current = state.0.lock().map_err(|e| e.to_string())?;
         *current = doc;
@@ -95,9 +100,9 @@ fn write_css_file(path: String, contents: String) -> Result<(), String> {
 
 /// Bir görseli okuyup `data:` URI'sine çevirir.
 ///
-/// Tema CSS'i tek bir metin olarak taşındığı (ve `localStorage.theme_content`
-/// içine yazıldığı) için görselin dosya yolunu değil, gömülü hâlini saklamak
-/// zorundayız — aksi hâlde tema başka bir makinede açıldığında görsel kaybolur.
+/// Tema CSS'i tek bir metin olarak taşındığı için görselin dosya yolunu
+/// değil, gömülü hâlini saklamak zorundayız — aksi hâlde tema başka bir
+/// makinede açıldığında görsel kaybolur.
 #[tauri::command]
 fn read_image_data_uri(path: String) -> Result<String, String> {
     use base64::Engine as _;
@@ -631,6 +636,12 @@ fn restart_app(app: AppHandle) {
 /// değiştirebilmek gerekiyor.
 #[cfg(target_os = "linux")]
 fn init_linux_env() {
+    // Ekran kontrolü, aşağıdaki iki değişkenden ÖNCE: `GDK_BACKEND=x11`
+    // yazdığımız anda bağlanılabilir X ekranı olmayan bir oturumda
+    // `gtk_init`'in düşeceği kesinleşiyor ve geriye tek satırlık, sebebi
+    // göstermeyen bir panik kalıyor.
+    linux_display_preflight();
+
     // 1) Önizleme child webview'i X11 GEREKTİRİYOR.
     //
     // `Window::add_child` Linux'ta wry'nin `new_as_child` yoluna düşüyor ve o
@@ -644,7 +655,12 @@ fn init_linux_env() {
     // Uygulamanın tüm önizleme mimarisi o child webview'e dayandığından Wayland
     // oturumunda XWayland'e düşmek tek seçenek. Wayland'de native çalışmak,
     // wry child webview'i destekleyene kadar mümkün değil.
-    if std::env::var_os("GDK_BACKEND").is_none() {
+    //
+    // `DISPLAY` koşulu savunma amaçlı: `linux_display_preflight` X ekranı
+    // yoksa zaten çıkıyor, ama bu satır tek başına okunduğunda da "X yoksa
+    // x11'e zorlama" niyetini taşımalı — aksi hâlde ileride preflight
+    // gevşetilirse buradaki `set_var` sessizce gtk_init'i düşürür.
+    if std::env::var_os("GDK_BACKEND").is_none() && std::env::var_os("DISPLAY").is_some() {
         std::env::set_var("GDK_BACKEND", "x11");
     }
 
@@ -661,6 +677,83 @@ fn init_linux_env() {
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
+}
+
+/// GTK başlatılmadan önce oturumda bağlanılabilir bir ekran olduğunu doğrular;
+/// yoksa sebebini yazıp çıkar.
+///
+/// `gtk_init` başarısız olduğunda tao doğrudan panikliyor ve geriye şu satır
+/// kalıyor: `Failed to initialize gtk backend!`. Bu mesaj sebebi (root oturumu
+/// mu, XWayland'siz Wayland mı, ekransız bir kabuk mu) hiç göstermiyor;
+/// üstelik uygulama pencere açamadan öldüğü için masaüstünden çift tıklayan
+/// kullanıcı hiçbir çıktı da görmüyor. Bilinen üç sebebi burada, panikten önce
+/// adıyla söylüyoruz.
+///
+/// Çıkış kodu 1 ile ve panik OLMADAN sonlanıyor: bunlar programın hatası değil
+/// ortamın eksiği, dolayısıyla backtrace'in gösterecek bir şeyi yok.
+#[cfg(target_os = "linux")]
+fn linux_display_preflight() {
+    // Kullanıcı backend'i elle seçtiyse teşhis yolundan tamamen çekiliyoruz.
+    // Bilerek denenen bir yapılandırmayı (ör. `GDK_BACKEND=wayland` ile
+    // önizlemesiz açmayı denemek) burada kesmek sorun gidermeyi imkânsız
+    // kılardı — `init_linux_env` de aynı sebeple o değişkenin üzerine yazmıyor.
+    if std::env::var_os("GDK_BACKEND").is_some() {
+        return;
+    }
+
+    // 1) `sudo` ile başlatma.
+    //
+    // X sunucusu bağlantıyı reddediyor ("Authorization required, but no
+    // authorization protocol specified") çünkü root, çağıran kullanıcının
+    // yetki çerezini görmüyor: `sudo` ortamı temizlerken `XAUTHORITY`'yi
+    // düşürüyor ve root'un `~/.Xauthority`'sinde o çerez yok.
+    //
+    // Uygulamanın root'a hiçbir ihtiyacı yok. Çalışsaydı bile zararlı olurdu:
+    // projeler ve yapılandırma `~/.config` ile `~/.local/share` altına root'a
+    // ait olarak yazılır, sonraki normal oturumda kaydetme izin hatasıyla
+    // düşerdi.
+    if std::env::var_os("SUDO_USER").is_some() && std::env::var_os("XAUTHORITY").is_none() {
+        eprintln!(
+            "OpenAnime Theme: `sudo` ile başlatıldı ve X yetki çerezi (XAUTHORITY) yok — \
+             X sunucusu bu bağlantıyı reddedecek.\n\
+             Uygulamayı root olmadan, kendi kullanıcınızla çalıştırın:\n\
+             \n    ./OpenAnime.Theme_*.AppImage\n"
+        );
+        std::process::exit(1);
+    }
+
+    // Buradan sonrası yalnızca X ekranının varlığıyla ilgili; `DISPLAY` varsa
+    // `init_linux_env` x11'e sabitleyebilir ve yapacak bir şey kalmıyor.
+    if std::env::var_os("DISPLAY").is_some() {
+        return;
+    }
+
+    // 2) XWayland'siz saf Wayland oturumu.
+    //
+    // Önizleme child webview'i X11 gerektirdiği için (bkz. `init_linux_env`)
+    // bu oturumda uygulamanın çalışabileceği bir yol yok — Wayland backend'ine
+    // düşmek yalnızca hatayı `preview::create`'e erteler.
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        eprintln!(
+            "OpenAnime Theme: oturum saf Wayland (DISPLAY tanımsız) ve XWayland bulunamadı.\n\
+             Canlı önizleme, ana pencerenin içine gömülen ayrı bir X penceresi olduğu için \
+             uygulama X11 gerektiriyor.\n\
+             Çözüm — XWayland'i kurup oturumu yeniden açın:\n\n    \
+             Debian/Ubuntu:  sudo apt install xwayland\n    \
+             Fedora:         sudo dnf install xorg-x11-server-Xwayland\n    \
+             Arch:           sudo pacman -S xorg-xwayland\n\n\
+             ya da giriş ekranından X11 (Xorg) oturumu seçin.\n"
+        );
+        std::process::exit(1);
+    }
+
+    // 3) Ekransız kabuk: TTY, servis, ya da X yönlendirmesi olmayan SSH.
+    eprintln!(
+        "OpenAnime Theme: bağlanılabilir bir ekran yok (DISPLAY ve WAYLAND_DISPLAY tanımsız).\n\
+         Uygulama bir masaüstü oturumundan başlatılmalı; uzaktan bağlanıyorsanız \
+         `ssh -X` kullanın.\n"
+    );
+    std::process::exit(1);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

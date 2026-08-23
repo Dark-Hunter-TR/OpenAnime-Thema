@@ -42,6 +42,11 @@ export interface ProjectSummary {
 export interface EditorUiState {
 	version: 1;
 	editMode: "visual" | "code";
+	/**
+	 * Editör paneli sekmesi. Eski projelerde yok — `editMode`'dan türetiliyor
+	 * (bkz. `+page.svelte` -> `tabFromMode`).
+	 */
+	editorTab?: "basic" | "all" | "code";
 	seedMode: ThemeMode;
 
 	radiusEnabled: boolean;
@@ -61,6 +66,23 @@ export interface EditorUiState {
 
 	/** Gelişmiş bölümlerin tamamı (logo, maskot, oynatıcı, kartlar …). */
 	adv: AdvState;
+
+	/**
+	 * Sıfırlamanın TABANI: düzenlenen şeyin "orijinali".
+	 *
+	 * Yeni bir temada `null` — taban sitenin kendi değerleri. Bir `.css`
+	 * dosyası ya da GitHub içeriği açıldıysa o temanın içe aktarma anındaki
+	 * kontrol durumu. Bölüm kapatıp açmak ve sıfırlama düğmesi buraya döner.
+	 *
+	 * Projeyle birlikte saklanıyor: taşınmasaydı kaydedilmiş bir tema yeniden
+	 * açıldığında taban sitenin varsayılanlarına düşer ve ilk aç-kapada temanın
+	 * değerleri silinirdi.
+	 *
+	 * İsteğe bağlı: bu alan eklenmeden kaydedilmiş projelerde yok
+	 * (`isUiState` yalnızca `version` ve `adv`e bakıyor, o yüzden eski
+	 * kayıtlar geçerli kalmaya devam ediyor).
+	 */
+	advBaseline?: AdvState | null;
 
 	viewport: "desktop" | "tablet" | "mobile";
 	currentPath: string;

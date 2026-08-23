@@ -218,7 +218,8 @@ pub fn create(app: &AppHandle, doc: &ThemeDoc) -> Result<(), Box<dyn std::error:
 }
 
 /// Önizlemedeki temayı anında günceller. Reload yok, re-render yok —
-/// yalnızca `<style themeStyle>` etiketinin textContent'i değişir.
+/// yalnızca editörün KENDİ `<style data-oa-preview>` etiketinin textContent'i
+/// değişir (bkz. `preview_init.js` -> tema enjeksiyonu).
 fn eval_apply_css<R: Runtime>(webview: &Webview<R>, css: &str) {
     let payload = serde_json::to_string(css).unwrap_or_else(|_| "\"\"".into());
     let _ = webview.eval(format!(

@@ -10,6 +10,9 @@
 import { expect, test } from "bun:test";
 
 import {
+	BADGE_SELECTOR,
+	BADGE_TEXT_HIDE_SELECTOR,
+	BADGE_TEXT_SELECTOR,
 	LOGO_BADGE_SELECTOR,
 	LOGO_ICON_GUARD_SELECTOR,
 	LOGO_IMAGE_HIDE_SELECTOR,
@@ -20,7 +23,15 @@ import {
 	LOGO_TEXT_SELECTOR,
 	SIDEBAR_SELECTOR
 } from "$lib/advanced";
-import { buildAdvRules, buildAdvTokens, defaultAdv, resetAdvSection } from "$lib/advancedBuild";
+import {
+	BADGE_INDEPENDENT_FIELDS,
+	buildAdvRules,
+	buildAdvTokens,
+	controlledRuleProps,
+	defaultAdv,
+	reseedSection,
+	resetAdvSection
+} from "$lib/advancedBuild";
 
 const PNG = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -205,7 +216,7 @@ test("bölüm sıfırlama yalnızca o bölümü etkiler", () => {
 	adv.sidebar.on = true;
 	adv.sidebar.width = 199;
 
-	adv = resetAdvSection(adv, "cards", "dark", []);
+	adv = resetAdvSection(adv, "cards", defaultAdv());
 
 	expect(adv.cards.on).toBe(false);
 	expect(adv.cards.radius).toBe(8);
@@ -220,7 +231,7 @@ test("sıfırlanan bölüm üretilen CSS'ten tamamen düşer", () => {
 	adv.sidebar.width = 199;
 	expect(buildAdvRules(adv)[SIDEBAR_SELECTOR]).toContain("199px");
 
-	adv = resetAdvSection(adv, "sidebar", "dark", []);
+	adv = resetAdvSection(adv, "sidebar", defaultAdv());
 	expect(buildAdvRules(adv)[SIDEBAR_SELECTOR]).toBeUndefined();
 });
 
@@ -231,9 +242,51 @@ test("logo sıfırlama seçilmiş görseli ve adı da temizler", () => {
 	adv.logo.textOn = true;
 	adv.logo.text = "X";
 
-	adv = resetAdvSection(adv, "logo", "dark", []);
+	adv = resetAdvSection(adv, "logo", defaultAdv());
 
 	expect(adv.logo.dataUri).toBe("");
+	expect(adv.logo.text).toBe("");
+	expect(Object.keys(buildAdvRules(adv))).toEqual([]);
+});
+
+/**
+ * Sıfırlama, düzenlenen şeyin ORİJİNALİNE döner.
+ *
+ * Kullanıcının bildirdiği hata: içe aktarılmış bir temada bir bölümü yalnızca
+ * kapatıp açmak, temanın değerlerini SİTE varsayılanlarıyla değiştiriyordu —
+ * logonun yazı tipi ve rengi gidiyordu. Kural iki durumlu: yeni tema
+ * oluşturuluyorsa taban sitenin değerleri, bir dosya/GitHub içeriği
+ * düzenleniyorsa o temanın değerleri.
+ */
+test("sıfırlama, içe aktarılan temanın değerlerine döner", () => {
+	// İçe aktarılmış temanın kontrol durumu.
+	const imported = defaultAdv();
+	imported.logo.textOn = true;
+	imported.logo.text = "Midnight";
+	imported.logo.textSize = 15;
+	imported.cards.radius = 10;
+
+	// Kullanıcı üzerinde oynuyor.
+	let adv = structuredClone(imported);
+	adv.logo.text = "Başka";
+	adv.logo.textSize = 28;
+
+	adv = resetAdvSection(adv, "logo", imported);
+
+	expect(adv.logo.text).toBe("Midnight");
+	expect(adv.logo.textSize).toBe(15);
+	expect(adv.logo.textOn).toBe(true);
+});
+
+/** Taban site varsayılanıyken davranış eskisi gibi kalmalı. */
+test("taban site varsayılanıyken sıfırlama siteye döner", () => {
+	let adv = defaultAdv();
+	adv.logo.textOn = true;
+	adv.logo.text = "X";
+
+	adv = resetAdvSection(adv, "logo", defaultAdv());
+
+	expect(adv.logo.textOn).toBe(false);
 	expect(adv.logo.text).toBe("");
 	expect(Object.keys(buildAdvRules(adv))).toEqual([]);
 });
@@ -301,4 +354,145 @@ test("ölü .calendar-card selector'ı üretilen CSS'te yok", () => {
 	const adv = defaultAdv();
 	adv.cards.on = true;
 	expect(JSON.stringify(buildAdvRules(adv))).not.toContain("calendar-card");
+});
+
+// --- Rozetler: gizleme ve yazı -----------------------------------------------
+
+/**
+ * Gizleme ve yazı, renk anahtarından BAĞIMSIZ olmalı: rozeti kaldırmak ya da
+ * yazısını değiştirmek isteyen biri renklerini de özelleştirmek zorunda
+ * kalmamalı.
+ */
+test("rozet gizleme renk anahtarı kapalıyken de çalışır", () => {
+	const adv = defaultAdv();
+	expect(buildAdvRules(adv)[BADGE_SELECTOR]).toBeUndefined();
+
+	adv.badges.badgeHidden = true;
+	expect(adv.badges.on).toBe(false);
+	expect(buildAdvRules(adv)[BADGE_SELECTOR]).toContain("display: none");
+});
+
+test("rozet yazısı orijinali gizleyip yerine yazar", () => {
+	const adv = defaultAdv();
+	adv.badges.badgeText = "  Yeni  ";
+
+	const rules = buildAdvRules(adv);
+	expect(rules[BADGE_TEXT_HIDE_SELECTOR]).toContain("display: none");
+	// Baştaki/sondaki boşluk kırpılır, değer tırnaklanır.
+	expect(rules[BADGE_TEXT_SELECTOR]).toContain('content: "Yeni"');
+});
+
+test("yazıdaki tırnak ve ters bölü kaçırılır", () => {
+	const adv = defaultAdv();
+	adv.badges.badgeText = 'A"B\\C';
+	// Kaçırılmasaydı `content` bildirimi ortadan bölünür ve kural bozulurdu.
+	expect(buildAdvRules(adv)[BADGE_TEXT_SELECTOR]).toContain('content: "A\\"B\\\\C"');
+});
+
+/**
+ * Gizleme, rengi ve yazıyı bastırmamalı.
+ *
+ * Bastırsaydı iki dal farklı özellik kümeleri üretirdi ve
+ * `controlledRuleProps` hangi dal açıksa yalnızca onunkini görürdü: kullanıcı
+ * gizlemeyi kapattığında eski `display: none` gövdede takılı kalırdı.
+ */
+/**
+ * Rozet yazısı SİLİNDİĞİNDE kural da kalkmalı.
+ *
+ * Kullanıcının bildirdiği hata: rozete yazı yazıp sonra silince düzelmiyordu —
+ * orijinal yazı gizli kalmaya devam ediyor, yerine de bir şey yazılmıyordu.
+ *
+ * Sebep `controlledRuleProps`ta: o, `enableEverySection` ile bütün bölümleri
+ * açıp üretilen kuralların ÖZELLİK ADLARINI topluyor ve `mergeRuleOverrides`
+ * neyi kaldırabileceğini oradan öğreniyor. `badgeText` gibi alanlar boş
+ * kaldığı sürece o kurallar hiç üretilmiyor, dolayısıyla listeye girmiyor ve
+ * eski kural kaldırılamıyordu.
+ */
+/**
+ * Enjekte edilen rozet yazısı, sitenin KENDİ ölçüsüyle yazılmalı.
+ *
+ * Değerler openani.me'nin canlı CSS'inden okundu:
+ *   `#badge .text-block { text-transform: uppercase; font-size: 10px;
+ *    font-weight: 600; letter-spacing: .5px }`
+ *
+ * Üç rozetin yazı stili birbirinden farklı. Tek bir ortak stil kullanıldığında
+ * rozet yazısı orijinalinden belirgin biçimde büyük ve ince çıkıyordu.
+ */
+test("rozet yazısı sitenin ölçüsüyle basılır", () => {
+	const adv = defaultAdv();
+	adv.badges.badgeText = "Yeni";
+
+	const body = buildAdvRules(adv)[BADGE_TEXT_SELECTOR];
+	expect(body).toContain("font-size: 10px");
+	expect(body).toContain("font-weight: 600");
+	expect(body).toContain("text-transform: uppercase");
+});
+
+/**
+ * "Yayınlandı" rozetinin ikinci durağı SAYDAM.
+ *
+ * Site: `linear-gradient(to right, #6371da, var(--fds-accent-tertiary))` ve
+ * `--fds-accent-tertiary` = `hsla(var(--fds-accent-base), 80%)`. Opak
+ * yazıldığında rozetin varsayılanı sitedekinden koyu çıkıyordu.
+ */
+test("yayınlandı rozetinin bitiş rengi %80 alfa taşır", () => {
+	const adv = defaultAdv();
+	// Sekiz basamaklı hex; `cc` = %80.
+	expect(adv.badges.releasedTo).toMatch(/^#[0-9a-f]{6}cc$/i);
+});
+
+test("rozet yazısı seçicileri kontrollerin sahiplendiği kümede", () => {
+	const owned = controlledRuleProps();
+
+	expect(owned[BADGE_TEXT_SELECTOR]?.has("content")).toBe(true);
+	expect(owned[BADGE_TEXT_HIDE_SELECTOR]?.has("display")).toBe(true);
+});
+
+/**
+ * Kapalı bölümün tazelenmesi, `on`a BAĞLI OLMAYAN alanları ezmemeli.
+ *
+ * Kullanıcının bildirdiği hata: "Rozeti gizle" anahtarı açılmıyordu. Anahtar
+ * `adv.badges` nesnesinin içinde ve bölüm kapalıyken o nesne tabandan yeniden
+ * kuruluyor — kullanıcı anahtarı açtığı anda tepkisel ifade çalışıp geri
+ * kapatıyordu. Yazı kutuları da aynı şekilde temizleniyordu.
+ *
+ * Bu sınıf kontrol denetiminin (`scripts/audit-controls.mjs`) kapsamı dışında:
+ * o, üretilen CSS'i ölçüyor, Svelte'in tepkiselliğini değil.
+ */
+test("tazeleme rozetlerin gizleme ve yazı alanlarını korur", () => {
+	const baseline = defaultAdv();
+
+	const current = defaultAdv();
+	current.badges.badgeHidden = true;
+	current.badges.badgeText = "Yeni";
+	// Renk ise tabandan tazelenmeli.
+	current.badges.badgeFrom = "#123456";
+
+	const next = reseedSection(current.badges, baseline.badges, BADGE_INDEPENDENT_FIELDS);
+
+	expect(next.badgeHidden).toBe(true);
+	expect(next.badgeText).toBe("Yeni");
+	expect(next.badgeFrom).toBe(baseline.badges.badgeFrom);
+});
+
+/** Sıfırlama düğmesi bu yoldan geçmiyor: her şeyi tabana döndürmeli. */
+test("sıfırlama gizleme ve yazıyı da temizler", () => {
+	let adv = defaultAdv();
+	adv.badges.badgeHidden = true;
+	adv.badges.badgeText = "Yeni";
+
+	adv = resetAdvSection(adv, "badges", defaultAdv());
+
+	expect(adv.badges.badgeHidden).toBe(false);
+	expect(adv.badges.badgeText).toBe("");
+});
+
+test("gizli rozette renk bildirimi de yazılmaya devam eder", () => {
+	const adv = defaultAdv();
+	adv.badges.on = true;
+	adv.badges.badgeHidden = true;
+
+	const body = buildAdvRules(adv)[BADGE_SELECTOR];
+	expect(body).toContain("display: none");
+	expect(body).toContain("linear-gradient");
 });

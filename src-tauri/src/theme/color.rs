@@ -44,13 +44,102 @@ pub fn fmt_triplet(hsl: Hsl) -> String {
     format!("{}, {}%, {}%", num(hsl[0]), num(hsl[1]), num(hsl[2]))
 }
 
+/// `RAMP_OFFSETS`teki ışıklılık farklarının ölçüldüğü taban.
+///
+/// Kütüphanenin varsayılan vurgusu `206, 100%, 42%`; oradaki basamak farkları
+/// (+7, +27, +38 / −6, −13, −22) bu ışıklılığa göre yazılmış.
+const REFERENCE_LIGHTNESS: f64 = 42.0;
+
+/// Bir basamağın ışıklılığı — sabit ekleme değil, KALAN BOŞLUĞA ORANLI.
+///
+/// Sabit ekleme yalnızca taban ışıklılık referansa yakınken doğru sonuç
+/// veriyordu. Açık bir vurguda üst basamaklar tavana dayanıp kırpılıyordu:
+/// içe aktarılan bir temanın vurgusu `217.9, 86.9%, 76.1%` iken `light-2`
+/// 76.1 + 27 = 103.1 → %100, yani DÜPEDÜZ BEYAZ çıkıyordu. Koyu kipte
+/// `--fds-accent-default` tam olarak `light-2`den türediği için vurgu rengiyle
+/// boyanan her şey (seçili kenar çubuğu ikonu, rozet ucu, oynatıcı rayı)
+/// beyaza dönüyordu.
+///
+/// Oranlı hesapta basamaklar tabanın uzaklığına göre ölçekleniyor: açık bir
+/// vurguda üst basamaklar sıkışıyor ama AYRIŞMAYA devam ediyor, koyu bir
+/// vurguda alt basamaklar için aynısı geçerli.
+///
+/// Referans tabanda (42) formül eski davranışla BİREBİR aynı sonucu veriyor —
+/// `default_base_produces_library_ramp` testi bunu sabitliyor.
+fn ramp_lightness(base_lightness: f64, delta: f64) -> f64 {
+    let ratio = if delta >= 0.0 {
+        // Yukarı doğru: referanstaki tavan boşluğunun ne kadarı kullanılmış.
+        delta / (100.0 - REFERENCE_LIGHTNESS)
+    } else {
+        -delta / REFERENCE_LIGHTNESS
+    };
+
+    if delta >= 0.0 {
+        base_lightness + (100.0 - base_lightness) * ratio
+    } else {
+        base_lightness - base_lightness * ratio
+    }
+}
+
+/// `--fds-accent-default`ın rampadaki karşılığı olan basamak indeksi.
+///
+/// Kütüphane bunu KİPE bağlı türetiyor (sitenin canlı CSS'inden okundu):
+///
+/// ```text
+/// .fds-theme-light { --fds-accent-default: hsl(var(--fds-accent-dark-1)) }
+/// .fds-theme-dark  { --fds-accent-default: hsla(var(--fds-accent-light-2)) }
+/// ```
+pub const fn accent_default_step(light_mode: bool) -> usize {
+    if light_mode {
+        4 // dark-1
+    } else {
+        1 // light-2
+    }
+}
+
+/// Verilen rengi `step` basamağında ÜRETEN tabanı geriye çözer.
+///
+/// Neden gerekli: sitenin vurguyla boyadığı her şey (seçili menü göstergesi,
+/// seçili ikon, bağlantılar) `--fds-accent-default` kullanıyor — rampanın
+/// TABANINI değil. Bir tema kendi vurgu rengini doğrudan boyamada
+/// kullandığında o renk `accent-default`a karşılık gelir.
+///
+/// İçe aktarmada o renk doğrudan taban yapılırsa sitenin çizdiği öğeler bir
+/// basamak kayıyor: koyu kipte `light-2` tabandan daha açık olduğu için
+/// gösterge çubuğu ve ikonlar temanın kendi renginden görünür biçimde açık
+/// çıkıyordu. Tabanı geriye çözünce ikisi çakışıyor.
+///
+/// `derive_ramp`in tersi: ton ve doygunluk farkları çıkarılıyor, ışıklılık ise
+/// `ramp_lightness` tersine çevriliyor.
+pub fn base_for_step(target: Hsl, step: usize) -> Hsl {
+    let (dh, ds, dl) = RAMP_OFFSETS[step.min(RAMP_OFFSETS.len() - 1)];
+
+    let lightness = if dl >= 0.0 {
+        let k = dl / (100.0 - REFERENCE_LIGHTNESS);
+        // l' = l(1-k) + 100k  ->  l = (l' - 100k) / (1-k)
+        (target[2] - 100.0 * k) / (1.0 - k)
+    } else {
+        let k = -dl / REFERENCE_LIGHTNESS;
+        // l' = l(1-k)  ->  l = l' / (1-k)
+        target[2] / (1.0 - k)
+    };
+
+    [
+        wrap_hue(target[0] - dh),
+        (target[1] - ds).clamp(0.0, 100.0),
+        lightness.clamp(0.0, 100.0),
+    ]
+}
+
 pub fn derive_ramp(base: Hsl) -> [Hsl; 7] {
     let mut out = [[0.0; 3]; 7];
     for (i, (dh, ds, dl)) in RAMP_OFFSETS.iter().enumerate() {
         out[i] = [
             wrap_hue(base[0] + dh),
             (base[1] + ds).clamp(0.0, 100.0),
-            (base[2] + dl).clamp(0.0, 100.0),
+            // Kırpma güvenlik ağı olarak duruyor; oranlı hesap zaten
+            // 0–100 aralığından çıkmıyor.
+            ramp_lightness(base[2], *dl).clamp(0.0, 100.0),
         ];
     }
     out
@@ -127,6 +216,65 @@ pub fn named_color_to_hsl(name: &str) -> Option<Hsl> {
         "gray" | "grey" => Some([0.0, 0.0, 50.0]),
         _ => None,
     }
+}
+
+/// Bir rengin ALFASI (0.0–1.0). Renk okunamazsa `None`, alfa yazılmamışsa 1.0.
+///
+/// `parse_color_to_hsl` alfayı düşürüyor ve bu, vurgu ailesinde gözle görülür
+/// bir hataya yol açıyordu: temanın `rgba(141, 180, 247, 0.04)` gibi %4'lük
+/// tint'i kaydırıcıya bağlandığında opak `hsl(...)` olarak geri yazılıyor,
+/// ince bir arka plan tonu OLDUĞU GİBİ dolu bir vurgu bloğuna dönüşüyordu
+/// (arama kutusu, seçili menü öğesi, kart kenarlıkları).
+pub fn parse_alpha(value: &str) -> Option<f64> {
+    let mut v = value.trim();
+    if v.ends_with("!important") {
+        v = v.trim_end_matches("!important").trim();
+    }
+
+    // `#rrggbbaa` / `#rgba`
+    if let Some(hex) = v.strip_prefix('#') {
+        let hex: String = hex.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+        return match hex.len() {
+            4 => u8::from_str_radix(&hex[3..4].repeat(2), 16).ok().map(|a| a as f64 / 255.0),
+            8 => u8::from_str_radix(&hex[6..8], 16).ok().map(|a| a as f64 / 255.0),
+            3 | 6 => Some(1.0),
+            _ => None,
+        };
+    }
+
+    if !(v.starts_with("rgb") || v.starts_with("hsl")) {
+        return Some(1.0);
+    }
+
+    let inner = v.find('(').and_then(|start| v.find(')').map(|end| &v[start + 1..end]))?;
+    let parts: Vec<&str> = inner
+        .split(|c| c == ',' || c == ' ' || c == '/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    if parts.len() < 4 {
+        return Some(1.0);
+    }
+    let raw = parts[3].trim();
+    let (number, percent) = match raw.strip_suffix('%') {
+        Some(n) => (n, true),
+        None => (raw, false),
+    };
+    let value: f64 = number.parse().ok()?;
+    Some(if percent { value / 100.0 } else { value }.clamp(0.0, 1.0))
+}
+
+/// Rengin "renkliliği" (0.0–1.0): HSL doygunluğunun, açıklığın uçlara
+/// yaklaştıkça sönmesini hesaba katan hâli.
+///
+/// Ham doygunluk tek başına yanıltıcı: `#e8eaf2` (neredeyse beyaz) %27.8
+/// doygunluk raporluyor, `#4a4f68` (arduvaz grisi) %16.9. İkisi de bir
+/// doygunluk eşiğini geçip "vurgu ailesi" sayılıyordu ve kullanıcı vurgu
+/// rengini oynattığında temanın BEYAZ METNİ ile gri tonları da kayıyordu.
+/// Kroma bu ikisini 0.04 ve 0.12'ye indiriyor; gerçek vurgu tonları
+/// (`#8db4f7` 0.42, `#6b9ef5` 0.54, `#b8d4ff` 0.28) yukarıda kalıyor.
+pub fn chroma(hsl: Hsl) -> f64 {
+    let lightness = hsl[2] / 100.0;
+    (1.0 - (2.0 * lightness - 1.0).abs()) * (hsl[1] / 100.0)
 }
 
 pub fn parse_color_to_hsl(value: &str) -> Option<Hsl> {
