@@ -93,6 +93,9 @@ Var OaDescText
 Var OaRadio1
 Var OaRadio2
 Var OaRadio3
+; OaUninstallPrevious'a geçilecek bayraklar. Çağıran belirliyor, çünkü iki
+; çağrı yerinin ihtiyacı TAMAMEN farklı (bkz. OaUninstallPrevious).
+Var OaUninstallArgs
 Var OaChkOnlineLatest
 Var OaStatusText
 Var OaSetsukiImage
@@ -293,16 +296,33 @@ Function OaOnRadioChange
 FunctionEnd
 
 Function OaCustomPageLeave
-  ; Eğer kaldırma seçildiyse uninstaller'ı çalıştır ve çık
+  ; Kaldırma seçildiyse kaldırıcıyı NORMAL modda çalıştır ve çık.
+  ;
+  ; Bayraksız çalıştırmak şart. Burada bir zamanlar mod 2 ile aynı
+  ; "/UPDATE /P" geçiliyordu ve bu, kaldırmayı sessizce YARIM bırakıyordu:
+  ; kaldırıcının içinde kısayol silme, Run anahtarı silme ve kullanıcı verisi
+  ; silme bloklarının üçü de `${If} $UpdateMode <> 1` koşuluna bağlı. Yani
+  ; "Kaldır" diyen kullanıcının masaüstü ve Başlat Menüsü kısayolları yerinde
+  ; kalıyor, uygulama kaldırılmamış gibi görünüyordu.
+  ;
+  ; /P de geçmiyoruz: onay sayfası atlanmasın ki kullanıcı "uygulama
+  ; verilerini de sil" kutucuğunu görüp kendisi karar verebilsin — Windows'un
+  ; Ayarlar > Uygulamalar yolundan kaldırdığındaki deneyimin aynısı.
   ${If} $OaInstallMode == 3
+    StrCpy $OaUninstallArgs ""
     Call OaUninstallPrevious
     Quit
   ${EndIf}
 
-  ; Eğer temiz kurulum seçildiyse önce eskisini kaldır, sonra TÜM kullanıcı
-  ; verisini (ayarlar + WebView2 + cache) sil. Eski uninstaller /UPDATE modunda
-  ; çağrıldığı için app data'yı kendisi silmez; bu yüzden burada elle temizliyoruz.
+  ; Temiz kurulum: önce eskisini kaldır, sonra TÜM kullanıcı verisini
+  ; (ayarlar + WebView2 + cache) sil.
+  ;
+  ; Burada "/UPDATE /P" DOĞRU olan: kurulum hemen ardından geleceği için
+  ; kısayolların silinip yeniden yaratılmasına gerek yok ve kullanıcıya
+  ; ikinci bir onay penceresi göstermek istemiyoruz. /UPDATE app data'yı da
+  ; atlattığı için temizliği aşağıda kendimiz yapıyoruz.
   ${If} $OaInstallMode == 2
+    StrCpy $OaUninstallArgs "/UPDATE /P"
     Call OaUninstallPrevious
     Call OaWipeUserData
   ${EndIf}
@@ -347,6 +367,13 @@ Function StripQuotes
   Pop $1
 FunctionEnd
 
+; Kurulu sürümün kaldırıcısını çalıştırır.
+;
+; Bayraklar ÇAĞIRAN tarafından `$OaUninstallArgs` ile veriliyor, burada sabit
+; değil: "Kaldır" tam bir kaldırma istiyor (bayraksız), "Temiz Kurulum" ise
+; sessiz ve kısayollara dokunmayan bir ön temizlik istiyor ("/UPDATE /P").
+; İkisini tek bir sabit bayrak setiyle karşılamaya çalışmak, kaldırmanın
+; yarım kalmasına yol açmıştı (bkz. OaCustomPageLeave).
 Function OaUninstallPrevious
   HideWindow
 
@@ -368,12 +395,12 @@ Function OaUninstallPrevious
   Delete "$TEMP\oa_uninstall_prev.exe"
   CopyFiles /SILENT "$R1" "$TEMP\oa_uninstall_prev.exe"
   IfFileExists "$TEMP\oa_uninstall_prev.exe" 0 run_inplace
-    ExecWait '"$TEMP\oa_uninstall_prev.exe" /UPDATE /P _?=$R2' $0
+    ExecWait '"$TEMP\oa_uninstall_prev.exe" $OaUninstallArgs _?=$R2' $0
     Delete "$TEMP\oa_uninstall_prev.exe"
     Goto done_uninstall
   run_inplace:
     ; Kopyalama başarısızsa mevcut davranışa güvenli düşüş.
-    ExecWait '"$R1" /UPDATE /P _?=$R2' $0
+    ExecWait '"$R1" $OaUninstallArgs _?=$R2' $0
 
 done_uninstall:
   BringToFront
@@ -879,7 +906,45 @@ Section Uninstall
   {{#each resources_ancestors}}
   RMDir /REBOOTOK "$INSTDIR\\{{this}}"
   {{/each}}
-  RMDir "$INSTDIR"
+
+  ; Kurulum klasörünü sil.
+  ;
+  ; `/r` gerekiyor: `RMDir` tek başına yalnızca BOŞ klasörü siler, yani
+  ; klasörde tek bir beklenmedik dosya (log, crash dump, kullanıcının oraya
+  ; attığı bir şey) kalmışsa klasör olduğu gibi duruyordu — üstelik kayıt
+  ; defteri anahtarı aşağıda silindiği için kullanıcı onu "Program
+  ; Ekle/Kaldır"dan bir daha kaldıramıyordu.
+  ;
+  ; `/r` özyinelemeli sildiği için önce nereyi sildiğimizi doğruluyoruz.
+  ; $INSTDIR kullanıcı tarafından seçilebiliyor (kurulum dizini sayfası) ve
+  ; yanlışlıkla bir kök ya da profil klasörü seçilmiş olabilir; oralarda
+  ; özyinelemeli silme kabul edilemez. Böyle bir durumda özyinelemesiz
+  ; sürüme düşüyoruz: klasör kalır ama hiçbir kullanıcı dosyası kaybolmaz.
+  StrCpy $R8 1
+
+  ${If} $INSTDIR == ""
+  ${OrIf} $INSTDIR == "$PROGRAMFILES"
+  ${OrIf} $INSTDIR == "$PROGRAMFILES64"
+  ${OrIf} $INSTDIR == "$LOCALAPPDATA"
+  ${OrIf} $INSTDIR == "$APPDATA"
+  ${OrIf} $INSTDIR == "$PROFILE"
+  ${OrIf} $INSTDIR == "$DESKTOP"
+  ${OrIf} $INSTDIR == "$DOCUMENTS"
+  ${OrIf} $INSTDIR == "$WINDIR"
+    StrCpy $R8 0
+  ${EndIf}
+
+  ; Sürücü kökü ("C:\" gibi): GetParent böyle bir yol için boş döner.
+  ${GetParent} "$INSTDIR" $R9
+  ${If} $R9 == ""
+    StrCpy $R8 0
+  ${EndIf}
+
+  ${If} $R8 = 1
+    RMDir /r /REBOOTOK "$INSTDIR"
+  ${Else}
+    RMDir "$INSTDIR"
+  ${EndIf}
 
   ; Remove shortcuts if not updating
   ${If} $UpdateMode <> 1
