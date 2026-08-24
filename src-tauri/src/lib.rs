@@ -10,6 +10,97 @@ use tauri::{AppHandle, Manager, State};
 
 use theme::{derive_ramp, fmt_triplet, parse_css, parse_foreign_css, ThemeDoc, ThemeState};
 
+/// Yerel tanılama izleri.
+///
+/// ## Neden var
+///
+/// "Giriş yaptıktan sonra arayüz kullanılamaz hâle geliyor" diye, çok seyrek
+/// tekrarlanan bir hata bildirildi. Uygulamada hiçbir loglama katmanı yok
+/// (`tauri-plugin-log` bilerek eklenmedi; tek `eprintln!`'ler Linux açılış
+/// kontrolleri) — yani kullanıcıda tekrarladığında geriye hiçbir iz kalmıyor
+/// ve sebep koddan okunarak KESİNLEŞTİRİLEMİYOR.
+///
+/// Buradaki izler o boşluğu, en olası iki hipotezi ayırt edecek kadar
+/// dolduruyor:
+///
+///   1. `cookies_for_url` (bkz. `preview_login_state`) Windows'ta takılıyor ve
+///      3 saniyede bir gelen yoklamalar üst üste binerek async komutları
+///      çalıştıran iş parçacıklarını tüketiyor. İmzası: `preview_login_state`
+///      için yüksek `süre` + 1'den büyük `eşzamanlı`.
+///   2. `set_preview_visible` geç dönüyor ve önizleme, diyaloğun üstünde
+///      kalıyor (native child webview her zaman host içeriğinin üstüne
+///      çizilir). İmzası: `set_preview_visible` için yüksek `süre`.
+///
+/// Gürültü yapmıyor: yalnızca EŞİĞİ AŞAN çağrılar ve köprü zaman aşımları
+/// yazılıyor. Normal bir oturumda çıktı tamamen boş kalır.
+mod diag {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    /// Bu eşiğin altındaki çağrılar sağlıklı sayılıyor ve hiç yazılmıyor.
+    ///
+    /// 1500 ms, kullanıcının gecikmeyi fark ettiği noktanın belirgin biçimde
+    /// üstünde ama gerçek bir takılmanın çok altında — yani hem yanlış alarm
+    /// vermiyor hem de takılmanın başlangıcını kaçırmıyor.
+    const SLOW: Duration = Duration::from_millis(1500);
+
+    /// Süresi ölçülen bir çağrı. `Drop` ile değil elle bitiriliyor
+    /// (`finish`), çünkü ölçüm noktası `await`'in bittiği yer.
+    pub struct Call {
+        label: &'static str,
+        started: Instant,
+        inflight: &'static AtomicUsize,
+        /// Bu çağrı başlarken kaç tane kardeşi zaten çalışıyordu (kendisi
+        /// dâhil). 1'den büyükse çağrılar üst üste biniyor demektir.
+        concurrent: usize,
+    }
+
+    impl Call {
+        pub fn start(label: &'static str, inflight: &'static AtomicUsize) -> Self {
+            let concurrent = inflight.fetch_add(1, Ordering::Relaxed) + 1;
+            Call {
+                label,
+                started: Instant::now(),
+                inflight,
+                concurrent,
+            }
+        }
+
+        pub fn finish(self) {
+            let elapsed = self.started.elapsed();
+            self.inflight.fetch_sub(1, Ordering::Relaxed);
+            if elapsed >= SLOW || self.concurrent > 1 {
+                eprintln!(
+                    "[oa-tanılama] {} yavaş: süre={}ms eşzamanlı={}",
+                    self.label,
+                    elapsed.as_millis(),
+                    self.concurrent
+                );
+            }
+        }
+    }
+
+    /// `preview_login_state` için eşzamanlılık sayacı — hipotez 1'in ölçüsü.
+    pub static LOGIN_STATE: AtomicUsize = AtomicUsize::new(0);
+    /// `set_preview_visible` için — hipotez 2'nin ölçüsü.
+    pub static PREVIEW_VISIBLE: AtomicUsize = AtomicUsize::new(0);
+    /// Hesap köprüsünün tamamı (giriş, çıkış, `/user`, QR).
+    pub static BRIDGE: AtomicUsize = AtomicUsize::new(0);
+
+    /// Köprünün bir turunun nasıl bittiğini yazar.
+    ///
+    /// Zaman aşımı her zaman yazılıyor: eşiği aşan bir süreden farklı olarak
+    /// bu, tek başına anlamlı bir arıza — sayfa köprüyü hiç yanıtlamamış
+    /// demektir.
+    pub fn bridge_outcome(outcome: &str, waited: Duration) {
+        eprintln!(
+            "[oa-tanılama] hesap köprüsü: {} ({}ms)",
+            outcome,
+            waited.as_millis()
+        );
+    }
+}
+
 /// `apply_theme` sonucu. CSS ve türetilmiş accent rampası tek turda döner ki
 /// editör her slider hareketinde iki ayrı IPC çağrısı yapmak zorunda kalmasın.
 #[derive(Serialize)]
@@ -155,6 +246,15 @@ fn preview_navigate(app: AppHandle, url: String) -> Result<(), String> {
     preview::navigate(&app, &url)
 }
 
+/// Önizlemedeki sayfayı olduğu yerde yeniden yükler.
+///
+/// Önizleme şeridindeki yenileme düğmesinin karşılığı. Neden `preview_navigate`
+/// ile aynı şey olmadığı için bkz. `preview::reload`.
+#[tauri::command]
+fn preview_reload(app: AppHandle) -> Result<(), String> {
+    preview::reload(&app)
+}
+
 /// Önizlemenin çerezlerini ve site verilerini (localStorage, önbellek…) siler.
 ///
 /// `async` olması `preview_login_state`'teki gerekçeyle aynı: WebView2'nin
@@ -166,9 +266,17 @@ async fn preview_clear_data(app: AppHandle) -> Result<(), String> {
 }
 
 /// Ana ekran / ayarlar görünümünde önizlemeyi gizler.
+///
+/// Süresi ölçülüyor (bkz. `diag`): bu çağrı geciktiğinde önizleme, ekranı
+/// kaplayan diyaloğun ÜSTÜNDE kalıyor — native child webview her zaman host
+/// içeriğinin üstüne çizildiği için kullanıcı diyaloğu hiç görmüyor ve
+/// uygulama donmuş gibi hissettiriyor.
 #[tauri::command]
 fn set_preview_visible(app: AppHandle, visible: bool) -> Result<(), String> {
-    preview::set_visible(&app, visible).map_err(|e| e.to_string())
+    let call = diag::Call::start("set_preview_visible", &diag::PREVIEW_VISIBLE);
+    let result = preview::set_visible(&app, visible).map_err(|e| e.to_string());
+    call.finish();
+    result
 }
 
 /// Önizlemede openani.me oturumu açık mı?
@@ -204,9 +312,16 @@ async fn preview_login_state(app: AppHandle) -> Result<LoginState, String> {
         .parse()
         .map_err(|e| format!("önizleme adresi çözümlenemedi: {e}"))?;
 
-    let cookies = webview
-        .cookies_for_url(url)
-        .map_err(|e| format!("çerezler okunamadı: {e}"))?;
+    // Ölçüm yalnızca `cookies_for_url`'ü sarıyor: yukarıdaki adres
+    // çözümlemesi saf hesaplama, takılabilecek tek çağrı bu (bkz. `diag`,
+    // hipotez 1). Ön yüz artık yoklamaları üst üste bindirmiyor
+    // (`+page.svelte` -> `refreshLoginState`), ama sayaç YİNE DE burada:
+    // korumanın gerçekten tuttuğunu ancak buradan görebiliyoruz.
+    let call = diag::Call::start("preview_login_state", &diag::LOGIN_STATE);
+    let cookies = webview.cookies_for_url(url);
+    call.finish();
+
+    let cookies = cookies.map_err(|e| format!("çerezler okunamadı: {e}"))?;
 
     let logged_in = cookies
         .iter()
@@ -303,17 +418,32 @@ where
         return Err(e);
     }
 
+    // Köprünün TAMAMI ölçülüyor (bkz. `diag`). Buradaki iz, ön yüzdeki
+    // "giriş yapılıyor…" kilidinin ne kadar süre açık kaldığının Rust
+    // tarafındaki karşılığı; ikisi ayrışırsa gecikme köprüde değil IPC'de
+    // demektir.
+    let call = diag::Call::start("hesap köprüsü", &diag::BRIDGE);
+    let started = std::time::Instant::now();
     let outcome = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
     app.unlisten(listener);
+    call.finish();
 
     match outcome {
         Ok(Ok(reply)) => Ok(reply),
         // Kanal düştü: dinleyici kaldırıldı ama yanıt gelmedi.
-        Ok(Err(_)) => Err("hesap köprüsünden yanıt alınamadı".into()),
-        Err(_) => Err(
-            "önizleme yanıt vermedi — openani.me sayfasının yüklenmesini bekleyip tekrar deneyin"
-                .into(),
-        ),
+        Ok(Err(_)) => {
+            diag::bridge_outcome("kanal düştü, yanıt yok", started.elapsed());
+            Err("hesap köprüsünden yanıt alınamadı".into())
+        }
+        Err(_) => {
+            // Zaman aşımı KOŞULSUZ yazılıyor: sayfa köprüyü hiç yanıtlamamış
+            // demektir ve bu tek başına anlamlı bir arıza.
+            diag::bridge_outcome("zaman aşımı", started.elapsed());
+            Err(
+                "önizleme yanıt vermedi — openani.me sayfasının yüklenmesini bekleyip tekrar deneyin"
+                    .into(),
+            )
+        }
     }
 }
 
@@ -778,6 +908,7 @@ pub fn run() {
             read_image_data_uri,
             set_preview_bounds,
             preview_navigate,
+            preview_reload,
             preview_clear_data,
             set_preview_visible,
             preview_login_state,

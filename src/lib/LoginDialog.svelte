@@ -83,7 +83,40 @@
 	// İstek sürerken kapatmayı kilitliyoruz: köprü yanıtı geldiğinde çerez
 	// yazılıyor ve diyalog o anda yok olmuş olursa kullanıcı giriş yaptığını
 	// hiç öğrenemezdi.
+	//
+	// Bunun bedeli var ve `LOGIN_TIMEOUT_MS` tam olarak o bedeli sınırlıyor:
+	// `busy` iken bu diyalogtan çıkılamıyor — kapatma düğmesi DOM'dan
+	// kalkıyor, Escape ve arka plan tıklaması buraya takılıyor — ve `.smoke`
+	// katmanı pencerenin TAMAMINI kaplayıp tıklamaları yutuyor. Yani
+	// `accountLogin` çözülmezse yalnızca diyalog değil, uygulamanın tamamı
+	// erişilemez hâle geliyor.
 	$: closable = !busy;
+
+	/**
+	 * `busy`'nin açık kalabileceği en uzun süre (ms).
+	 *
+	 * Rust'ın kendi köprü zaman aşımı 30 sn (`lib.rs` -> `bridge_await`), yani
+	 * sağlıklı bir sistemde çağrı en geç onun biraz üstünde döner. Bunu aşan
+	 * bir bekleme "köprü geç yanıtladı" değil "IPC hiç dönmedi" demektir ve o
+	 * noktada kullanıcıyı kilitli tutmanın hiçbir faydası kalmıyor.
+	 *
+	 * İstek İPTAL EDİLMİYOR — edilemez de: sayfa `POST /user/auth`'u çoktan
+	 * atmış ve oturum çerezini yazmış olabilir. Yalnızca arayüzün kilidi
+	 * açılıyor, geç gelen yanıt `submitRun` ile yok sayılıyor. Bu yüzden
+	 * gösterilen mesaj "giriş başarısız" değil "yanıt alınamadı" diyor:
+	 * girişin gerçekleşmiş olma ihtimali duruyor ve hesap kartı bir sonraki
+	 * oturum yoklamasında zaten doğruyu gösterecek.
+	 */
+	const LOGIN_TIMEOUT_MS = 45_000;
+
+	/**
+	 * O an geçerli giriş denemesinin kimliği.
+	 *
+	 * `qrRun` ile aynı gerekçe: zaman aşımından sonra eski deneme hâlâ
+	 * arkada duruyor olabilir; geç gelen yanıtı yeni durumun üzerine
+	 * yazmasın diye her tur kendi kimliğini kontrol ediyor.
+	 */
+	let submitRun = 0;
 
 	// Sitedeki `disabled` mantığının aynısı: e-posta adımında adres, parola
 	// adımında parola dolu olmadan düğme pasif.
@@ -104,6 +137,15 @@
 	}
 
 	function close() {
+		// Zaman aşımına uğramış bir deneme hâlâ arkada bekliyor olabilir; geç
+		// gelen yanıtı sıfırlanmış formun üstüne yazmasın diye kimliği burada
+		// geçersizleştiriyoruz.
+		//
+		// `reset()` içinde DEĞİL, tam olarak burada: `reset()` başarı yolunda
+		// da çağrılıyor ve orada kimliği artırmak, `submit`'in `finally`'sindeki
+		// `run === submitRun` kontrolünü düşürüp `busy`'yi kalıcı olarak açık
+		// bırakırdı — yani düzeltmeye çalıştığımız kilidin ta kendisini.
+		submitRun++;
 		reset();
 		onClose();
 	}
@@ -197,14 +239,31 @@
 		step = "email";
 	}
 
+	/** Zaman aşımı dalını normal hatalardan ayıran işaret. */
+	const TIMEOUT_MARK = "__oa_login_timeout__";
+
 	async function submit() {
 		if (!canSubmit) return;
+		const run = ++submitRun;
 		busy = true;
 		errorMessage = "";
 		needsVerify = false;
 
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const guard = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => reject(new Error(TIMEOUT_MARK)), LOGIN_TIMEOUT_MS);
+		});
+
 		try {
-			const outcome = await accountLogin(email, password);
+			const attempt = accountLogin(email, password);
+			// Zaman aşımı yarışı kazanırsa asıl istek arkada kalıyor. Reddederse
+			// kimse dinlemediği için "unhandled rejection" doğururdu; burada
+			// susturuluyor. Dinleyici eklemek isteği etkilemiyor, yalnızca
+			// reddin sahipsiz kalmasını önlüyor.
+			void attempt.catch(() => {});
+
+			const outcome = await Promise.race([attempt, guard]);
+			if (run !== submitRun) return;
 
 			// Parolayı yanıt gelir gelmez düşürüyoruz; sonraki adımların hiçbiri
 			// ona ihtiyaç duymuyor.
@@ -220,12 +279,27 @@
 			reset();
 			onSuccess();
 		} catch (e) {
+			if (run !== submitRun) return;
+
+			if (e instanceof Error && e.message === TIMEOUT_MARK) {
+				// Girişin BAŞARISIZ olduğunu söylemiyoruz: istek iptal edilmedi
+				// ve sayfa oturum çerezini çoktan yazmış olabilir. Söylediğimiz
+				// tek şey yanıtın gelmediği — kilidi de burada açıyoruz.
+				errorMessage =
+					"Giriş isteği yanıt vermedi. Bu pencereyi kapatıp hesap durumunu " +
+					"kontrol edebilir ya da birkaç saniye sonra tekrar deneyebilirsiniz.";
+				return;
+			}
+
 			// Rust hem kendi hatalarını (önizleme yok, geçit kurulmadı) hem de
 			// sunucunun ham İngilizce mesajını aynı kanaldan döndürüyor;
 			// `loginErrorText` yalnızca tanıdıklarını çeviriyor.
 			errorMessage = loginErrorText(typeof e === "string" ? e : String(e));
 		} finally {
-			busy = false;
+			clearTimeout(timer);
+			// Geç gelen eski bir deneme, kullanıcının başlattığı YENİ denemenin
+			// kilidini açmamalı.
+			if (run === submitRun) busy = false;
 		}
 	}
 </script>

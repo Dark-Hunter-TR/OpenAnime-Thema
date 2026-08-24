@@ -83,6 +83,7 @@
 		previewClearData,
 		previewLoginState,
 		previewNavigate,
+		previewReload,
 		readCssFile,
 		readImageDataUri,
 		setPreviewBounds,
@@ -975,6 +976,33 @@
 
 	function onRouteSelect(event: CustomEvent<{ value: string }>) {
 		go(event.detail.value);
+	}
+
+	/** Yenileme sürerken düğmeyi pasifleştirmek için. */
+	let reloadingPreview = false;
+
+	/**
+	 * Önizlemedeki sayfayı yeniden yükler (şeritteki yenileme düğmesi).
+	 *
+	 * `go(currentPath)` DEĞİL: `currentPath` yalnızca uygulamanın kendi
+	 * başlattığı gezinmelerde güncelleniyor (bkz. `go`), kullanıcı önizlemenin
+	 * içinde bir bağlantıya tıkladığında bayat kalıyor. Oraya gitmek "yenile"
+	 * değil "son uygulama adresine dön" olurdu.
+	 *
+	 * `previewClearData` da değil: o çerezleri siler, yani oturumu düşürür.
+	 * Yenileme sayfayı tazelemeli, kullanıcıyı çıkarmamalı.
+	 */
+	async function refreshPreview() {
+		if (reloadingPreview) return;
+		reloadingPreview = true;
+		try {
+			await previewReload();
+			error = "";
+		} catch (e) {
+			error = String(e);
+		} finally {
+			reloadingPreview = false;
+		}
 	}
 
 	let clearingPreviewData = false;
@@ -2006,13 +2034,33 @@
 	// özellikle eski (çerez okuyan) yolunda bırakıldı.
 	let loggedIn = false;
 	let loginTimer: ReturnType<typeof setInterval> | null = null;
+	/**
+	 * O an devam eden bir oturum yoklaması var mı?
+	 *
+	 * `setInterval` önceki çağrının bitip bitmediğine bakmıyor: yoklama
+	 * takılırsa 3 saniyede bir üstüne bir yenisi biniyordu. Karşılığı olan
+	 * `preview_login_state` async bir komut ve içindeki `cookies_for_url`
+	 * Windows'ta bloklayabiliyor (bkz. `lib.rs`'teki uzun not, wry#583) —
+	 * yani biriken her çağrı async komutları çalıştıran iş parçacıklarından
+	 * birini tutuyor. Havuz dolduğunda `account_login` dâhil BÜTÜN async
+	 * komutlar hiç çalışmıyor ve giriş diyaloğu asla yanıt alamıyor.
+	 *
+	 * Bu bayrak zinciri baştan kesiyor: aynı anda en fazla bir yoklama olur,
+	 * biri sürerken gelen tik sessizce atlanır. Yoklamanın amacı zaten
+	 * "arada bir tazele"; bir turu atlamak hiçbir şey kaybettirmiyor.
+	 */
+	let loginStatePending = false;
 
 	async function refreshLoginState() {
+		if (loginStatePending) return;
+		loginStatePending = true;
 		try {
 			loggedIn = (await previewLoginState()).loggedIn;
 		} catch {
 			// Önizleme henüz kurulmadıysa ya da çerez okunamadıysa durumu
 			// değiştirmiyoruz; bu bir hata değil, "henüz bilmiyoruz".
+		} finally {
+			loginStatePending = false;
 		}
 	}
 
@@ -2090,15 +2138,33 @@
 		githubImportOpen;
 	$: syncPreviewVisibility(view, modalOpen);
 
+	/**
+	 * En son istenen görünürlük çağrısının kimliği.
+	 *
+	 * `syncPreviewVisibility` async ve reaktif ifadeden tetikleniyor, yani iki
+	 * çağrı üst üste binebiliyor (ör. diyalog kapanırken aynı anda görünüm
+	 * değişmesi). Sıra korunmazsa ESKİ bir çağrının `syncBounds`'u yeni
+	 * duruma göre yanlış bir dikdörtgen yazabiliyor. Önizleme native bir child
+	 * webview ve her zaman host içeriğinin üstüne çiziliyor; yanlış yerde
+	 * bırakılan bir webview arayüzü kapatıp tıklamaları yutar, yani ekranda
+	 * "donma" olarak görünür.
+	 */
+	let visibilitySeq = 0;
+
 	async function syncPreviewVisibility(current: NavId, blocked: boolean) {
+		const seq = ++visibilitySeq;
 		const shouldShow = current === "editor" && !blocked;
 		try {
 			await setPreviewVisible(shouldShow);
+			// Bu çağrı beklerken daha yenisi başladıysa son sözü o söylesin.
+			if (seq !== visibilitySeq) return;
 			if (shouldShow) {
 				await tick();
+				if (seq !== visibilitySeq) return;
 				syncBounds();
 			}
 		} catch (e) {
+			if (seq !== visibilitySeq) return;
 			error = String(e);
 		}
 	}
@@ -2170,6 +2236,44 @@
 		checkForUpdatesOnStartup();
 
 		window.addEventListener("resize", syncBounds);
+
+		// --- Sahipsiz hataları görünür kıl ---------------------------------
+		//
+		// Uygulamada `console` çağrısı ve global hata yakalayıcısı yoktu; bir
+		// `await` zinciri sessizce reddettiğinde ekranda hiçbir iz kalmıyor,
+		// yalnızca "bir şey olmuyor" görünüyordu. Bildirilen "giriş sonrası
+		// arayüz kullanılamıyor" hatası tam olarak böyle bir sessiz arızayla
+		// örtüşüyor; nedenini ayırt edebilmek için önce onu GÖRMEK gerekiyor.
+		//
+		// Var olan hata kanalına bağlanıyor (`error` -> `StatusBar`), yeni bir
+		// mekanizma kurulmuyor. Olay `preventDefault` edilmiyor — geliştirici
+		// araçları açıksa oradaki kayıt da yerinde kalsın.
+		const describe = (detail: unknown): string => {
+			if (detail instanceof Error) return detail.message || detail.name;
+			if (typeof detail === "string") return detail;
+			// `JSON.stringify` döngüsel bir nesnede throw ediyor. Hata
+			// yakalayıcısının kendisinin patlaması, yakalamaya çalıştığı
+			// sessizliği daha da beter yapardı.
+			try {
+				return JSON.stringify(detail) ?? String(detail);
+			} catch {
+				return String(detail);
+			}
+		};
+
+		const reportUnhandled = (source: string, detail: unknown) => {
+			// Var olan bir hata mesajının üstüne yazmıyoruz: ilk hata genelde
+			// asıl olan, sonrakiler onun sonucu oluyor.
+			if (!error) error = `${source}: ${describe(detail)}`;
+		};
+
+		const onRejection = (e: PromiseRejectionEvent) =>
+			reportUnhandled("Yakalanmamış hata", e.reason);
+		const onWindowError = (e: ErrorEvent) => reportUnhandled("Betik hatası", e.message);
+
+		window.addEventListener("unhandledrejection", onRejection);
+		window.addEventListener("error", onWindowError);
+
 		const removeEasterEgg = installEasterEgg();
 		push();
 
@@ -2177,6 +2281,8 @@
 			slotObserver?.disconnect();
 			if (loginTimer) clearInterval(loginTimer);
 			window.removeEventListener("resize", syncBounds);
+			window.removeEventListener("unhandledrejection", onRejection);
+			window.removeEventListener("error", onWindowError);
 			removeEasterEgg();
 		};
 	});
@@ -2649,14 +2755,35 @@
 				</SegmentedControl>
 			</div>
 
-			<div class="viewport-pill">
-				<SegmentedControl bind:value={viewport}>
-					{#each VIEWPORTS as vp}
-						<SegmentedControlButton value={vp.id} on:click={() => (viewport = vp.id)}>
-							{vp.name}
-						</SegmentedControlButton>
-					{/each}
-				</SegmentedControl>
+			<!--
+				Sağ grup. `.viewport-bar` iki çocuğu `space-between` ile iki uca
+				yaslıyor; yenileme düğmesi üçüncü bir KARDEŞ olarak eklenseydi üçü
+				de eşit aralıkla dağılıp mod hapını ortadan kaydırırdı. Bu yüzden
+				düğme ile görünüm seçici tek bir sarmalayıcıda duruyor — şerit
+				yine iki çocuk görüyor.
+			-->
+			<div class="viewport-group">
+				<div class="viewport-pill">
+					<Tooltip text="Önizlemedeki sayfayı yeniden yükle">
+						<IconButton
+							aria-label="Önizlemeyi yenile"
+							on:click={refreshPreview}
+							disabled={reloadingPreview}
+						>
+							<Icon name="refresh" size={16} />
+						</IconButton>
+					</Tooltip>
+				</div>
+
+				<div class="viewport-pill">
+					<SegmentedControl bind:value={viewport}>
+						{#each VIEWPORTS as vp}
+							<SegmentedControlButton value={vp.id} on:click={() => (viewport = vp.id)}>
+								{vp.name}
+							</SegmentedControlButton>
+						{/each}
+					</SegmentedControl>
+				</div>
 			</div>
 		</div>
 
@@ -2953,6 +3080,15 @@
 		padding: 8px 12px;
 		/* Şerit sürüklenebilir olmasın diye title bar'dan bağımsız. */
 		box-sizing: border-box;
+	}
+
+	/* Şeridin sağ ucundaki grup: yenileme düğmesi + görünüm seçici.
+	   `gap` şeridin kendi `gap: 8px` değerinin aynısı — yeni bir ölçü
+	   uydurulmuyor. */
+	.viewport-group {
+		display: flex;
+		gap: 8px;
+		align-items: center;
 	}
 
 	/* Yüzen his: kendi zemini, kenarlığı ve gölgesi olan bir hap.

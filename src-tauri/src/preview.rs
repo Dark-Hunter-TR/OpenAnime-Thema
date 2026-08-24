@@ -414,6 +414,31 @@ pub fn navigate(app: &AppHandle, url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Önizlemedeki sayfayı OLDUĞU YERDE yeniden yükler.
+///
+/// `navigate(SITE_URL + currentPath)` ile aynı şey DEĞİL. Uygulamanın bildiği
+/// `currentPath` yalnızca kendi başlattığı gezinmelerde güncelleniyor
+/// (`+page.svelte` -> `go`); kullanıcı önizlemenin İÇİNDE bir bağlantıya
+/// tıkladığında sayfa değişiyor ama o değişken bayat kalıyor. Oraya navigate
+/// etmek "yenile" değil "son uygulama adresine dön" olurdu.
+///
+/// `location.reload()` böyle bir varsayım yapmıyor: sayfa hangi adresteyse
+/// onu tazeliyor. Aynı teknik `soft_resize`'da da kullanılıyor (bkz.
+/// `preview_resize.js`), yani yeni bir yol açılmıyor — var olan `eval`
+/// kanalı kullanılıyor.
+///
+/// Yenilemenin temaya ya da oturuma zararı yok: `initialization_script` her
+/// navigasyonda yeniden çalışıyor, `on_page_load` da güncel temayı geri
+/// basıyor; çerezler zaten webview'in kavanozunda duruyor.
+pub fn reload(app: &AppHandle) -> Result<(), String> {
+    let Some(webview) = app.get_webview(PREVIEW_LABEL) else {
+        return Ok(());
+    };
+    webview
+        .eval("window.location.reload()")
+        .map_err(|e| format!("önizleme yenilenemedi: {e}"))
+}
+
 /// Önizlemenin çerezlerini, localStorage/sessionStorage'ını ve önbelleğini
 /// tamamen siler, ardından siteyi baştan yükler.
 ///
