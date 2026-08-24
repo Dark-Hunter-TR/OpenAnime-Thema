@@ -757,6 +757,80 @@ fn restart_app(app: AppHandle) {
     app.restart();
 }
 
+/// Windows kaldırıcısının (`uninstall.exe`) tam yolu — varsa.
+///
+/// ## Neden kayıt defteri okunmuyor
+///
+/// Kaldırma yolu `HKCU\…\Uninstall\OpenAnime Theme` altında
+/// `UninstallString` olarak da duruyor (bkz. `nsis/installer.nsi`). Ama onu
+/// okumak bir kayıt defteri bağımlılığı (`winreg`) gerektirirdi ve hiçbir şey
+/// kazandırmazdı: NSIS kaldırıcıyı HER ZAMAN kurulum dizinine, uygulamanın
+/// yanına yazıyor (`WriteUninstaller "$INSTDIR\uninstall.exe"`). Çalışan
+/// exe'nin komşusuna bakmak aynı yanıtı sıfır bağımlılıkla veriyor.
+///
+/// ## `None` dönmesi bir hata değil
+///
+/// Uygulama kurulmadan da çalışabiliyor: geliştirme derlemesi, taşınabilir
+/// (portable) kopya, ya da Windows dışı bir platform. Bu durumlarda
+/// kaldırılacak bir kurulum yok; arayüz düğmeyi hiç göstermiyor
+/// (bkz. `uninstaller_available`).
+fn uninstaller_path() -> Option<std::path::PathBuf> {
+    if !cfg!(target_os = "windows") {
+        return None;
+    }
+    let exe = std::env::current_exe().ok()?;
+    let path = exe.parent()?.join("uninstall.exe");
+    path.is_file().then_some(path)
+}
+
+/// Ayarlardaki "Uygulamayı kaldır" satırı gösterilsin mi?
+#[tauri::command]
+fn uninstaller_available() -> bool {
+    uninstaller_path().is_some()
+}
+
+/// Windows kaldırıcısını başlatır ve uygulamadan çıkar.
+///
+/// ## Temizliği neden kendimiz yapmıyoruz
+///
+/// Kaldırıcı zaten doğru şeyleri siliyor: kurulum dizini, Başlat Menüsü ve
+/// masaüstü kısayolları, kayıt defteri girdileri ve — kullanıcı onay
+/// sayfasındaki kutucuğu işaretlerse — `%APPDATA%\com.openanime.theme`
+/// (tema projeleri) ile `%LOCALAPPDATA%\com.openanime.theme` (WebView2
+/// verisi: uygulama ayarları ve önizlemenin openani.me oturumu). Buraya
+/// ikinci bir silme mantığı yazmak, zamanla kaldırıcınınkinden ayrışacak iki
+/// ayrı doğruluk kaynağı üretirdi.
+///
+/// ## Neden sessiz (`/P`) değil
+///
+/// Kaldırıcı passive modda onay sayfasını atlıyor ve o sayfa atlanınca
+/// "uygulama verilerini de sil" kutucuğu işaretsiz sayılıyor — yani
+/// kullanıcının projeleri sessizce KALIRDI, üstelik ona hiç sorulmadan.
+/// İnteraktif başlatmak kararı kullanıcıya bırakıyor.
+///
+/// ## Neden hemen çıkıyoruz
+///
+/// Kaldırıcı çalışan uygulamayı görürse kullanıcıya "önce kapat" diyaloğu
+/// gösteriyor (`installer.nsi` -> `CheckIfAppIsRunning`). Kendimiz çıkarak o
+/// adımı gereksiz kılıyoruz. Çıkış yüzünden bu komutun IPC yanıtı ön yüze
+/// ulaşmayabilir; çağıran taraf bunu bekliyor (bkz. `AppSettings.svelte`).
+#[tauri::command]
+fn run_uninstaller(app: AppHandle) -> Result<(), String> {
+    let Some(path) = uninstaller_path() else {
+        return Err(
+            "Kaldırıcı bulunamadı. Bu kopya Windows kurulum paketiyle kurulmamış olabilir."
+                .into(),
+        );
+    };
+
+    std::process::Command::new(&path)
+        .spawn()
+        .map_err(|e| format!("kaldırıcı başlatılamadı: {e}"))?;
+
+    app.exit(0);
+    Ok(())
+}
+
 /// Linux'ta WebKitGTK'yı, uygulamanın çalışabildiği bilinen yapılandırmaya
 /// sabitler.
 ///
@@ -920,6 +994,8 @@ pub fn run() {
             fetch_account_follows,
             import_css_text,
             restart_app,
+            uninstaller_available,
+            run_uninstaller,
             projects::projects_dir_path,
             projects::list_projects,
             projects::load_project,

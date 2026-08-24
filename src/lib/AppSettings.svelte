@@ -40,14 +40,23 @@
 	 * `space-between` fluent'in bir prop'u değil: site onu `class` ile
 	 * geçiriyor ve kuralını kendi yazıyor (bkz. aşağıdaki style bloğu).
 	 */
-	import { createEventDispatcher } from "svelte";
+	import { createEventDispatcher, onMount } from "svelte";
 	import { unclip } from "$lib/unclip";
-	import { Button, ComboBox, Expander, TextBlock, ToggleSwitch } from "fluent-svelte-extra";
+	import {
+		Button,
+		ComboBox,
+		ContentDialog,
+		Expander,
+		TextBlock,
+		ToggleSwitch
+	} from "fluent-svelte-extra";
 
 	import AccountCard from "$lib/AccountCard.svelte";
 	import Icon from "$lib/Icon.svelte";
+	import StatusBar from "$lib/StatusBar.svelte";
 	import { ROUTES, VIEWPORTS } from "$lib/routes";
 	import type { AppSettings } from "$lib/settings";
+	import { runUninstaller, uninstallerAvailable } from "$lib/uninstall";
 
 	export let settings: AppSettings;
 	export let projectCount = 0;
@@ -157,6 +166,42 @@
 		settings.updateChannel = event.detail.value;
 		if (channelSelectPrimed) onChannelChange();
 		channelSelectPrimed = true;
+	}
+
+	// --- Uygulamayı kaldırma -------------------------------------------------
+	//
+	// Silme işini uygulama YAPMIYOR; Windows kurulum paketinin kendi
+	// kaldırıcısını çalıştırıyor (bkz. `$lib/uninstall.ts` ve
+	// `lib.rs` -> `run_uninstaller`).
+
+	/** Kaldırıcı bu kopyanın yanında mı? Değilse satır hiç gösterilmiyor. */
+	let canUninstall = false;
+	let confirmUninstall = false;
+	let uninstallError = "";
+	/** Kaldırıcı başlatıldı; uygulama kapanmak üzere. */
+	let uninstalling = false;
+
+	onMount(async () => {
+		canUninstall = await uninstallerAvailable().catch(() => false);
+	});
+
+	/**
+	 * Kaldırıcıyı başlatır.
+	 *
+	 * Söz BİLEREK beklenmiyor. Rust komutu kaldırıcıyı başlattıktan hemen
+	 * sonra uygulamayı kapatıyor, yani başarı durumunda IPC yanıtı hiç
+	 * dönmeyebilir; `await` etseydik arayüz çözülmeyecek bir sözde asılı
+	 * kalırdı. Yalnızca REDDİ ele alıyoruz — o durumda uygulama açık kalıyor
+	 * ve kullanıcı hatayı görüyor.
+	 */
+	function startUninstall() {
+		uninstalling = true;
+		uninstallError = "";
+		runUninstaller().catch((e) => {
+			uninstallError = typeof e === "string" ? e : String(e);
+			uninstalling = false;
+			confirmUninstall = false;
+		});
 	}
 
 	/**
@@ -589,8 +634,71 @@
 			</Expander>
 		</section>
 
+		<!-- --- Uygulama ------------------------------------------------------ -->
+		<!-- En altta, çünkü buradaki tek eylem geri alınamaz ve gündelik bir
+		     ayar değil. Satır yalnızca kaldırıcı gerçekten yanımızdaysa
+		     görünüyor (Windows kurulumu); geliştirme derlemesinde, taşınabilir
+		     kopyada ya da diğer platformlarda hiç çizilmiyor. -->
+		{#if canUninstall}
+			<section class="expand-section">
+				<TextBlock variant="bodyStrong" class="title">Uygulama</TextBlock>
+
+				{#if uninstallError}
+					<StatusBar
+						severity="critical"
+						title="Kaldırma başlatılamadı"
+						message={uninstallError}
+						closable={false}
+					/>
+				{/if}
+
+				<Expander class="space-between" expandable={false}>
+					<Icon slot="icon" name="remove" size={20} />
+					<div class="item-header">
+						<TextBlock variant="body">Uygulamayı kaldır</TextBlock>
+						<TextBlock variant="caption" class="text-secondary">
+							Windows kaldırma sihirbazını açar ve uygulamayı kapatır. Tema
+							projelerinizin de silinip silinmeyeceğini sihirbazdaki kutucukla
+							siz seçersiniz; işaretlemezseniz projeleriniz diskte kalır.
+						</TextBlock>
+					</div>
+					<div class="expander-control">
+						<Button on:click={() => (confirmUninstall = true)} disabled={uninstalling}>
+							{uninstalling ? "Kaldırıcı açılıyor…" : "Kaldır"}
+						</Button>
+					</div>
+				</Expander>
+			</section>
+		{/if}
+
 	</div>
 </div>
+
+<!-- Onay diyaloğu: eylem geri alınamaz olduğu için düğme doğrudan
+     tetiklemiyor. Varsayılan (vurgulu) eylem VAZGEÇMEK — yanlışlıkla Enter'a
+     basmak uygulamayı kaldırmamalı. -->
+<ContentDialog
+	bind:open={confirmUninstall}
+	title="Uygulamayı kaldır?"
+	size="standard"
+>
+	<TextBlock variant="body">
+		OpenAnime Tema Editörü bu bilgisayardan kaldırılacak. Uygulama hemen
+		kapanacak ve Windows'un kaldırma sihirbazı açılacak.
+	</TextBlock>
+	<TextBlock variant="caption" class="text-secondary">
+		Sihirbazdaki "uygulama verilerini de sil" kutucuğunu işaretlemedikçe tema
+		projeleriniz diskte kalır. Kendi dışa aktardığınız .css dosyalarına
+		hiçbir durumda dokunulmaz.
+	</TextBlock>
+
+	<svelte:fragment slot="footer">
+		<Button variant="accent" on:click={() => (confirmUninstall = false)}>Vazgeç</Button>
+		<Button on:click={startUninstall} disabled={uninstalling}>
+			{uninstalling ? "Açılıyor…" : "Kaldır"}
+		</Button>
+	</svelte:fragment>
+</ContentDialog>
 
 <style>
 	/* Görsel karar yok; her ölçü openani.me'nin canlı CSS'inden birebir.

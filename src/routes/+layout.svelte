@@ -293,34 +293,43 @@
 		align-items: center !important;
 	}
 
-	/* ComboBox açılır listesi: kendi kutusunun genişliğinde kalsın.
+	/* ComboBox açılır listesi.
 	   ("Yazı tipi" seçicisi liste açıldığında panelden taşıp pencere boyunca
-	   uzanıyordu.)
+	   uzanıyordu; ayarlardaki "Önizlemenin modu" seçicisi de aynı şekilde.)
 
-	   ## Bu bir teşhis değil, geometrinin sabitlenmesi
+	   ## Sebep artık biliniyor
 
-	   Kütüphanenin kendi kaynağı zaten doğru: `<ul class="combo-box-dropdown">`
-	   `.combo-box` div'inin İÇİNDE duruyor, o div `position: relative` ve liste
-	   `position: absolute; inline-size: calc(100% + 8px); inset-inline-start: 0`.
-	   Yani listenin kutusuna göre konumlanması gerekiyor. Taşmanın sebebini
-	   kaynaktan çıkaramadım: uygulamada `.combo-box`'a dokunan bir kural yok,
-	   ikinci bir fluent paketi de yüklü değil.
+	   Burada bir zamanlar listenin genişliğini ve yatay konumunu `!important`
+	   ile geri yazan iki kural vardı. Yazıldıkları sırada sebep
+	   bilinmiyordu ("kaynaktan çıkaramadım" notuyla) ve kurallar nedeni
+	   ortadan kaldırmıyor, sonucu perdeliyordu — üstelik taşmayı da
+	   çözmüyorlardı.
 
-	   Bu yüzden buradaki kurallar bir nedeni ortadan kaldırmıyor, kütüphanenin
-	   KENDİ amaçladığı değerleri geri yazıyor — hangi mekanizma araya girerse
-	   girsin sonuç doğru kalıyor. Yeni bir değer uydurulmuyor, o yüzden bir
-	   şeyi bozma riski yok.
+	   Gerçek sebep CSS'te değil, `$lib/unclip.ts`'teydi: liste kırpılmasın
+	   diye `document.body`ye taşınıyor, ama ComboBox kendi `style`
+	   attribute'unu (`--fds-menu-offset`) yeniden yazınca oraya konan
+	   konumlandırma siliniyor ve liste `position: absolute` olarak GÖRÜNÜM
+	   ALANINA göre çözülüyordu — yani `inline-size: calc(100% + 8px)` pencere
+	   genişliği demek oluyordu.
+
+	   `unclip` artık listeyi konumlandırılmış bir sarmalayıcıya alıyor, yani
+	   kütüphanenin kendi kuralları doğru kutuya çözülüyor. Ölçümle
+	   doğrulandı: dört farklı pencere boyutunda liste, tetikleyicinin
+	   genişliğinde ve tamamen görünür alanın içinde. Bu yüzden o iki kural
+	   KALDIRILDI — gereksizdiler ve kütüphanenin `auto-width` sağa hizalama
+	   dalını (`inset-inline-start: auto` yazan) sessizce bozuyorlardı.
+
+	   Aşağıdaki tek kural duruyor çünkü hâlâ gerekli: `unclip` yalnızca
+	   kırpan kutuların içindeki listeleri taşıyor. Taşınmayanlar (ör.
+	   `GithubImportDialog`'daki seçici) hâlâ `.combo-box` div'inin içinde
+	   `position: absolute` duruyor ve konumlanmak için o div'in
+	   konumlandırılmış olmasına ihtiyaç duyuyorlar.
 
 	   `!important` gerekçesi yukarıdaki `.info-bar` notuyla aynı: kütüphane
 	   çift kapsam sınıfıyla derliyor, uygulama düzeyindeki yaprak seçici
 	   özgüllükle geçemiyor. */
 	:global(.combo-box) {
 		position: relative !important;
-	}
-
-	:global(.combo-box-dropdown) {
-		inline-size: calc(100% + 8px) !important;
-		inset-inline-start: 0 !important;
 	}
 
 	/* `auto-width` varyantı bilerek içeriği kadar geniş; onu daraltmıyoruz,
