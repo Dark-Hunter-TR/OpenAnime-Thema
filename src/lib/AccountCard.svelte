@@ -75,14 +75,37 @@
 	 * gereksiz bir istek atmayalım.
 	 */
 	let unlistenFocus: (() => void) | null = null;
+	/**
+	 * Bileşen hâlâ ekranda mı?
+	 *
+	 * `onFocusChanged` bir `Promise` döndürüyor ve kaydı ancak çözüldüğünde
+	 * elimize veriyor. Kullanıcı o çözülmeden Ayarlar'dan çıkarsa `onDestroy`
+	 * çalıştığı anda `unlistenFocus` hâlâ `null` olur, atama SONRADAN yapılır
+	 * ve dinleyici kalıcı olarak sızardı — her Ayarlar ziyareti bir tane daha
+	 * ekleyerek. Sızan her dinleyici, pencere her odaklandığında ayrı bir
+	 * `fetch_account_info` (30 sn'lik köprü çağrısı) başlatıyordu.
+	 *
+	 * Bu bayrak yarışın iki yakasını da kapatıyor: kayıt geç gelirse anında
+	 * geri alınıyor, erken gelirse `onDestroy` onu normal yoldan kaldırıyor.
+	 */
+	let alive = true;
 
 	onMount(async () => {
-		unlistenFocus = await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+		const unlisten = await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
 			if (focused && error) load();
 		});
+		if (!alive) {
+			unlisten();
+			return;
+		}
+		unlistenFocus = unlisten;
 	});
 
-	onDestroy(() => unlistenFocus?.());
+	onDestroy(() => {
+		alive = false;
+		unlistenFocus?.();
+		unlistenFocus = null;
+	});
 
 	// --- Rozetler ------------------------------------------------------------
 	//

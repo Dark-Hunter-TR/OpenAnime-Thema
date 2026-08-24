@@ -199,6 +199,21 @@ export const setPreviewBounds = (x: number, y: number, width: number, height: nu
 export const previewNavigate = (url: string) => invoke<void>("preview_navigate", { url });
 
 /**
+ * Önizlemedeki sayfayı OLDUĞU YERDE yeniden yükler.
+ *
+ * `previewNavigate(SITE_ORIGIN + currentPath)` ile aynı şey değil: uygulamanın
+ * bildiği `currentPath` yalnızca kendi başlattığı gezinmelerde güncelleniyor,
+ * kullanıcı önizlemenin İÇİNDE bir bağlantıya tıkladığında bayat kalıyor.
+ * Bu komut sayfanın gerçekte bulunduğu adresi tazeliyor
+ * (bkz. `preview.rs` -> `reload`).
+ *
+ * Tema ve oturum korunuyor: `initialization_script` her navigasyonda yeniden
+ * çalışıyor, `on_page_load` güncel temayı geri basıyor, çerezler webview'in
+ * kavanozunda duruyor.
+ */
+export const previewReload = () => invoke<void>("preview_reload");
+
+/**
  * Önizlemenin çerezlerini ve site verilerini (localStorage, önbellek…) silip
  * siteyi baştan yükler.
  *
